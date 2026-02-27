@@ -1,0 +1,150 @@
+from fastapi import APIRouter, Depends, Response
+from sqlalchemy.orm import Session
+
+from app.api.routes.auth import get_current_user
+from app.db.session import get_db
+from app.models import ScheduleEntry, User
+import datetime
+
+router = APIRouter()
+
+
+def _fmt_dt_utc(dt: datetime.datetime) -> str:
+    # format as UTC time for ICS (YYYYMMDDTHHMMSSZ)
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        # assume naive datetimes are UTC
+        dt = dt.replace(tzinfo=datetime.timezone.utc)
+    dt_utc = dt.astimezone(datetime.timezone.utc)
+    return dt_utc.strftime("%Y%m%dT%H%M%SZ")
+
+
+def _fmt_date(d: datetime.date) -> str:
+    return d.strftime("%Y%m%d")
+
+
+def _entry_to_vevent(entry: ScheduleEntry) -> str:
+    lines = []
+    lines.append("BEGIN:VEVENT")
+    uid = f"{entry.id}@intranet"
+    lines.append(f"UID:{uid}")
+    dtstamp = datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    lines.append(f"DTSTAMP:{dtstamp}")
+    if entry.start:
+        dtstart = _fmt_dt_utc(entry.start)
+        lines.append(f"DTSTART:{dtstart}")
+        if entry.end:
+            dtend = _fmt_dt_utc(entry.end)
+            lines.append(f"DTEND:{dtend}")
+    else:
+        # all-day event on entry.date
+        lines.append(f"DTSTART;VALUE=DATE:{_fmt_date(entry.date)}")
+        # DTEND is exclusive in iCal, so add one day
+        end_date = entry.date + datetime.timedelta(days=1)
+        lines.append(f"DTEND;VALUE=DATE:{_fmt_date(end_date)}")
+
+    # summary and description
+    summary = entry.name or ""
+    lines.append(f"SUMMARY:{summary}")
+    desc_parts = []
+    if entry.description:
+        desc_parts.append(entry.description)
+    if entry.notes:
+        desc_parts.append(entry.notes)
+    if desc_parts:
+        # simplify newlines
+        desc = "\\n".join(desc_parts)
+        lines.append(f"DESCRIPTION:{desc}")
+
+    lines.append("END:VEVENT")
+    return "\r\n".join(lines)
+
+
+@router.get("/calendars/public.ics")
+def public_calendar(db: Session = Depends(get_db)):
+    entries = db.query(ScheduleEntry).filter(ScheduleEntry.public_event == True).all()
+    cal_lines = [
+        "BEGIN:VCALENDAR",
+        "VERSION:2.0",
+        "PRODID:-//Intranet//EN",
+    ]
+    for e in entries:
+        cal_lines.append(_entry_to_vevent(e))
+    cal_lines.append("END:VCALENDAR")
+    ics = "\r\n".join(cal_lines) + "\r\n"
+    return Response(content=ics, media_type="text/calendar")
+
+
+@router.get("/calendars/personal.ics")
+def personal_calendar(db: Session = Depends(get_db), _user: User = Depends(get_current_user)):
+    # include entries where user is responsible or devotional, but exclude if user can't come
+    entries = db.query(ScheduleEntry).all()
+    cal_lines = [
+        "BEGIN:VCALENDAR",
+        "VERSION:2.0",
+        "PRODID:-//Intranet//EN",
+    ]
+    for e in entries:
+        # relationships may be lazy; check membership
+        user_id = _user.id
+        responsible_ids = {u.id for u in e.responsible_users}
+        devotional_ids = {u.id for u in e.devotional_users}
+        cant_come_ids = {u.id for u in e.cant_come_users}
+        if user_id in cant_come_ids:
+            continue
+        if user_id in responsible_ids or user_id in devotional_ids:
+            cal_lines.append(_entry_to_vevent(e))
+    cal_lines.append("END:VCALENDAR")
+    ics = "\r\n".join(cal_lines) + "\r\n"
+    return Response(content=ics, media_type="text/calendar")
+
+
+@router.get("/calendars/personal/{token}.ics")
+def personal_calendar_token(db: Session = Depends(get_db), token: str = None):
+    # tokenized personal calendar (no auth required)
+    if not token:
+        return Response(content="", media_type="text/calendar", status_code=400)
+    user = db.query(User).filter(User.calendar_token == token).first()
+    if not user:
+        return Response(content="", media_type="text/calendar", status_code=404)
+    entries = db.query(ScheduleEntry).all()
+    cal_lines = [
+        "BEGIN:VCALENDAR",
+        "VERSION:2.0",
+        "PRODID:-//Intranet//EN",
+    ]
+    for e in entries:
+        user_id = user.id
+        responsible_ids = {u.id for u in e.responsible_users}
+        devotional_ids = {u.id for u in e.devotional_users}
+        cant_come_ids = {u.id for u in e.cant_come_users}
+        if user_id in cant_come_ids:
+            continue
+        if user_id in responsible_ids or user_id in devotional_ids:
+            cal_lines.append(_entry_to_vevent(e))
+    cal_lines.append("END:VCALENDAR")
+    ics = "\r\n".join(cal_lines) + "\r\n"
+    return Response(content=ics, media_type="text/calendar")
+
+
+@router.get('/calendars/activity/{activity_id}.ics')
+def activity_public_calendar(activity_id: str, db: Session = Depends(get_db)):
+    # public calendar per-activity: all public events for schedules linked to this activity
+    entries = (
+        db.query(ScheduleEntry)
+        .join(ScheduleEntry.schedule)
+        .filter(ScheduleEntry.public_event == True)
+        .filter(ScheduleEntry.schedule.has(activity_id=activity_id))
+        .all()
+    )
+    cal_lines = [
+        'BEGIN:VCALENDAR',
+        'VERSION:2.0',
+        'PRODID:-//Intranet//EN',
+    ]
+    for e in entries:
+        cal_lines.append(_entry_to_vevent(e))
+    cal_lines.append('END:VCALENDAR')
+    ics = '\r\n'.join(cal_lines) + '\r\n'
+    return Response(content=ics, media_type='text/calendar')

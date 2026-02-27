@@ -1,0 +1,27 @@
+services:
+  db:
+    image: postgres:18
+    environment:
+      POSTGRES_USER: intranet
+      POSTGRES_PASSWORD: intranet_password
+      POSTGRES_DB: intranet_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  backend:
+    build:
+      context: ./backend
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    volumes:
+      - ./backend:/app
+      - ./intranet-frontend/dist/spa:/frontend:ro
+    environment:
+      - STATIC_DIR=/frontend
+      - DATABASE_URL=postgresql+psycopg2://intranet:intranet_password@db:5432/intranet_db
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+
+volumes:
+  postgres_data:

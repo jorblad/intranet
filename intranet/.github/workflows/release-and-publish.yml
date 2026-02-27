@@ -1,0 +1,138 @@
+name: Release and Publish Docker Image
+
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  contents: write
+  packages: write
+  id-token: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.merged == true
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine bump label
+        id: label
+        run: |
+          labels=$(jq -r '.pull_request.labels[].name' "$GITHUB_EVENT_PATH" | tr '\n' ' ')
+          echo "PR labels: $labels"
+          bump=""
+          if echo "$labels" | grep -qw major; then bump=major; fi
+          if echo "$labels" | grep -qw minor; then
+            if [ "$bump" != "major" ]; then bump=minor; fi
+          fi
+          if echo "$labels" | grep -qw patch; then
+            if [ "$bump" = "" ]; then bump=patch; fi
+          fi
+          if [ -z "$bump" ]; then
+            echo "No semantic label (major/minor/patch) on merged PR — exiting." >&2
+            echo "bump=none" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          echo "bump=$bump" >> $GITHUB_OUTPUT
+
+      - name: Exit if no bump label
+        if: steps.label.outputs.bump == 'none'
+        run: echo "No bump requested; nothing to do."
+
+      - name: Setup Git
+        if: steps.label.outputs.bump != 'none'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Compute next semver
+        if: steps.label.outputs.bump != 'none'
+        id: semver
+        run: |
+          # get latest tag (vMAJOR.MINOR.PATCH)
+          latest=$(git tag --list 'v*' --sort=-v:refname | head -n1)
+          if [ -z "$latest" ]; then latest="v0.0.0"; fi
+          echo "latest tag: $latest"
+          sem=${latest#v}
+          IFS='.' read -r major minor patch <<< "$sem"
+          case "${{ steps.label.outputs.bump }}" in
+            major)
+              major=$((major + 1)); minor=0; patch=0 ;;
+            minor)
+              minor=$((minor + 1)); patch=0 ;;
+            patch)
+              patch=$((patch + 1)) ;;
+          esac
+          new_tag="v${major}.${minor}.${patch}"
+          echo "new_tag=$new_tag" >> $GITHUB_OUTPUT
+          echo "new_tag=$new_tag"
+
+      - name: Login to GHCR
+        if: steps.label.outputs.bump != 'none'
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push backend image to GHCR
+        if: steps.label.outputs.bump != 'none'
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/intranet-backend:${{ steps.semver.outputs.new_tag }}
+            ghcr.io/${{ github.repository_owner }}/intranet-backend:latest
+
+      - name: Optionally push to Docker Hub
+        if: steps.label.outputs.bump != 'none' && secrets.DOCKERHUB_USERNAME && secrets.DOCKERHUB_TOKEN
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          echo "$DOCKERHUB_TOKEN" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin
+          docker tag ghcr.io/${{ github.repository_owner }}/intranet-backend:${{ steps.semver.outputs.new_tag }} ${DOCKERHUB_USERNAME}/intranet-backend:${{ steps.semver.outputs.new_tag }}
+          docker tag ghcr.io/${{ github.repository_owner }}/intranet-backend:latest ${DOCKERHUB_USERNAME}/intranet-backend:latest
+          docker push ${DOCKERHUB_USERNAME}/intranet-backend:${{ steps.semver.outputs.new_tag }}
+          docker push ${DOCKERHUB_USERNAME}/intranet-backend:latest
+
+      - name: Create Git tag and GitHub release
+        if: steps.label.outputs.bump != 'none'
+        uses: actions/create-release@v1
+        with:
+          tag_name: ${{ steps.semver.outputs.new_tag }}
+          release_name: Release ${{ steps.semver.outputs.new_tag }}
+          body: "Release created by merge PR #${{ github.event.pull_request.number }}"
+          draft: false
+          prerelease: false
+
+      - name: Update docker-compose.yml to use released image tag
+        if: steps.label.outputs.bump != 'none'
+        env:
+          NEW_TAG: ${{ steps.semver.outputs.new_tag }}
+        run: |
+          python - <<'PY'
+import re
+from pathlib import Path
+fp = Path('docker-compose.yml')
+txt = fp.read_text()
+# Replace a build: context: ./backend block with image entry. This keeps a simple pattern replacement.
+txt = re.sub(r"backend:\n(?:\s+.*\n)*?\s+build:\n\s+context: ./backend\n(?:\s+.*\n)*?\s+ports:.*\n", \
+             f"backend:\n  image: ghcr.io/${{GITHUB_REPOSITORY_OWNER}}/intranet-backend:${{NEW_TAG}}\n  ports:\n    - \"8000:8000\"\n", txt, flags=re.M)
+fp.write_text(txt)
+print('Updated docker-compose.yml to use image tag')
+PY
+
+      - name: Commit docker-compose update
+        if: steps.label.outputs.bump != 'none'
+        env:
+          NEW_TAG: ${{ steps.semver.outputs.new_tag }}
+        run: |
+          git add docker-compose.yml || true
+          git commit -m "chore(release): switch compose to use image $NEW_TAG" || echo "no changes to commit"
+          git push origin HEAD:main
