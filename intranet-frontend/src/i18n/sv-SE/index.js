@@ -53,6 +53,15 @@ export default {
     update_failed: 'Misslyckades med att uppdatera användare',
     deleted: 'Användare borttagen',
     delete_failed: 'Misslyckades med att ta bort användare'
+    ,
+    reset_password: 'Återställ lösenord',
+    reset_success: 'Lösenord återställt: {pw}',
+    reset_failed: 'Misslyckades med att återställa lösenordet',
+    copy_close: 'Kopiera och stäng'
+    ,
+    copy_success: 'Lösenord kopierat'
+    ,
+    reset_confirm: 'Återställ lösenord för {name}? Detta kommer att skapa ett nytt lösenord.'
   },
   adminAssignments: {
     user: 'Användare',
@@ -139,9 +148,7 @@ export default {
     bulk_delete_confirm_text: 'Är du säker på att du vill ta bort de valda raderna?',
     select_all_visible: 'Välj alla synliga',
     copy_activity_calendar: 'Kopiera aktivitetskalenderlänk',
-    activity_link_copied: 'Aktivitetskalenderlänk kopierad'
-
-  ,
+    activity_link_copied: 'Aktivitetskalenderlänk kopierad',
     term: 'Termin',
     activity: 'Aktivitet',
     details: 'Detaljer',

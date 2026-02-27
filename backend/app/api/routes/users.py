@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from app.api.routes.auth import get_current_user
 from app.core.rbac import require_superadmin
 from app.crud import create_user, delete_user, get_user_by_id, list_users, update_user
+from app.models import User
 from app.db.session import get_db
 from app.schemas.user import UserCreate, UserUpdate
 from app.schemas.user import UserSelfUpdate
@@ -13,14 +14,30 @@ router = APIRouter()
 
 
 @router.get("/user/user")
-def users_index(db: Session = Depends(get_db), _user=Depends(get_current_user)):
-    users = list_users(db)
+def users_index(organization_id: str | None = None, db: Session = Depends(get_db), _user=Depends(get_current_user)):
+    # If an organization_id filter is provided, only return users assigned to that org
+    # and ensure the requester is assigned to that org or is superadmin.
+    from app.core.rbac import is_superadmin, user_assigned_to_org
+    from app.models import UserOrganizationRole
+
+    if organization_id is not None:
+        if not (is_superadmin(_user) or user_assigned_to_org(_user, organization_id)):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to view users for this organization")
+        users = (
+            db.query(User)
+            .join(UserOrganizationRole, UserOrganizationRole.user_id == User.id)
+            .filter(UserOrganizationRole.organization_id == organization_id)
+            .all()
+        )
+    else:
+        users = list_users(db)
+
     return {
         "data": [
             {
                 "id": user.id,
                 "type": "user",
-                "attributes": {"display_name": user.display_name},
+                "attributes": {"display_name": user.display_name, "username": user.username},
             }
             for user in users
         ]
@@ -38,7 +55,7 @@ def users_detail(
         "data": {
             "id": user.id,
             "type": "user",
-            "attributes": {"display_name": user.display_name},
+            "attributes": {"display_name": user.display_name, "username": user.username},
         }
     }
 
@@ -85,7 +102,7 @@ def users_create(
         "data": {
             "id": user.id,
             "type": "user",
-            "attributes": {"display_name": user.display_name},
+            "attributes": {"display_name": user.display_name, "username": user.username},
         }
     }
 
@@ -102,7 +119,15 @@ def users_update(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     require_superadmin(_user)
     try:
-        user = update_user(db, user, payload.display_name, payload.password, payload.is_active)
+        user = update_user(
+            db,
+            user,
+            payload.display_name,
+            payload.password,
+            payload.is_active,
+            username=payload.username,
+            language=payload.language,
+        )
     except ValueError as e:
         if str(e) == "username_taken":
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Username already taken")
@@ -114,6 +139,31 @@ def users_update(
             "attributes": {"display_name": user.display_name},
         }
     }
+
+
+
+@router.post('/user/user/{user_id}/reset_password')
+def users_reset_password(user_id: str, db: Session = Depends(get_db), _user=Depends(get_current_user)):
+    require_superadmin(_user)
+    user = get_user_by_id(db, user_id)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    # generate a random password (uuid4 hex substring)
+    import uuid
+    new_pw = uuid.uuid4().hex[:12]
+    user = update_user(db, user, None, new_pw, None)
+    return {"data": {"id": user.id, "new_password": new_pw}}
+
+
+@router.post('/user/user/{user_id}/calendar_token/regenerate')
+def users_regenerate_calendar_token(user_id: str, db: Session = Depends(get_db), _user=Depends(get_current_user)):
+    require_superadmin(_user)
+    user = get_user_by_id(db, user_id)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    from app.crud.user import regenerate_calendar_token
+    token = regenerate_calendar_token(db, user)
+    return {"data": {"id": user.id, "calendar_token": token}}
 
 
 

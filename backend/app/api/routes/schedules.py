@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from app.api.routes.auth import get_current_user
 from app.core.rbac import require_org_admin_or_superadmin
 from app.core.rbac import require_superadmin
+from app.core.rbac import user_assigned_to_org, is_superadmin
 from app.crud import (
     create_entry,
     create_schedule,
@@ -44,10 +45,31 @@ def _entry_to_dict(entry):
 def schedules_index(
     activity_id: str | None = None,
     term_id: str | None = None,
+    organization_id: str | None = None,
     db: Session = Depends(get_db),
     _user=Depends(get_current_user),
 ):
-    schedules = list_schedules(db, activity_id=activity_id, term_id=term_id)
+    # If an organization filter is provided, ensure the user belongs to that org or is superadmin
+    # (frontend passes organization via query in some cases)
+    org_id = None
+    # try to read organization_id from query params via request (FastAPI already maps explicit param, so check function signature)
+    # list_schedules supports organization_id but the route doesn't expose it; respect activity_id/term_id filters only.
+    # If org filter provided, ensure the requester may view that org
+    if organization_id is not None:
+        if not (is_superadmin(_user) or user_assigned_to_org(_user, organization_id)):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to view schedules for this organization")
+        schedules = list_schedules(db, activity_id=activity_id, term_id=term_id, organization_id=organization_id)
+    else:
+        all_scheds = list_schedules(db, activity_id=activity_id, term_id=term_id)
+        if is_superadmin(_user):
+            schedules = all_scheds
+        else:
+            # only include global schedules or those in user's orgs
+            from app.crud.organization import list_organizations_for_user
+
+            assigned = {str(o.id) for o in list_organizations_for_user(db, _user.id)}
+            schedules = [s for s in all_scheds if (s.organization_id is None) or (str(s.organization_id) in assigned)]
+
     return {
         "data": [
             {
@@ -55,6 +77,7 @@ def schedules_index(
                 "name": schedule.name,
                 "term_id": schedule.term_id,
                 "activity_id": schedule.activity_id,
+                "organization_id": getattr(schedule, 'organization_id', None),
             }
             for schedule in schedules
         ]
@@ -67,14 +90,25 @@ def schedules_create(
     db: Session = Depends(get_db),
     _user=Depends(get_current_user),
 ):
-    require_superadmin(_user)
-    schedule = create_schedule(db, payload.name, payload.term_id, payload.activity_id)
+    # Allow any user assigned to the organization to create schedules for that org;
+    # creating a global (no organization) schedule requires superadmin.
+    org_id = getattr(payload, "organization_id", None)
+    if org_id is None:
+        require_superadmin(_user)
+    else:
+        if not (is_superadmin(_user) or user_assigned_to_org(_user, org_id)):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to create schedule for this organization")
+
+    schedule = create_schedule(
+        db, payload.name, payload.term_id, payload.activity_id, getattr(payload, "organization_id", None)
+    )
     return {
         "data": {
             "id": schedule.id,
             "name": schedule.name,
             "term_id": schedule.term_id,
             "activity_id": schedule.activity_id,
+            "organization_id": getattr(schedule, 'organization_id', None),
         }
     }
 
@@ -88,12 +122,18 @@ def schedules_detail(
     schedule = get_schedule(db, schedule_id)
     if not schedule:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Schedule not found")
+    # Enforce organization membership for schedule visibility
+    if getattr(schedule, 'organization_id', None):
+        if not (is_superadmin(_user) or user_assigned_to_org(_user, schedule.organization_id)):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to view this schedule")
+
     return {
         "data": {
             "id": schedule.id,
             "name": schedule.name,
             "term_id": schedule.term_id,
             "activity_id": schedule.activity_id,
+            "organization_id": getattr(schedule, 'organization_id', None),
         }
     }
 
@@ -108,7 +148,13 @@ def schedules_update(
     schedule = get_schedule(db, schedule_id)
     if not schedule:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Schedule not found")
-    require_superadmin(_user)
+    # Require org admin for the schedule's organization; if schedule is global require superadmin
+    org = getattr(schedule, "organization_id", None)
+    if org is None:
+        require_superadmin(_user)
+    else:
+        require_org_admin_or_superadmin(_user, org)
+
     schedule = update_schedule(db, schedule, payload.name, payload.term_id, payload.activity_id)
     return {
         "data": {
@@ -116,6 +162,7 @@ def schedules_update(
             "name": schedule.name,
             "term_id": schedule.term_id,
             "activity_id": schedule.activity_id,
+            "organization_id": getattr(schedule, 'organization_id', None),
         }
     }
 
@@ -129,7 +176,12 @@ def schedules_delete(
     schedule = get_schedule(db, schedule_id)
     if not schedule:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Schedule not found")
-    require_superadmin(_user)
+    org = getattr(schedule, "organization_id", None)
+    if org is None:
+        require_superadmin(_user)
+    else:
+        require_org_admin_or_superadmin(_user, org)
+
     delete_schedule(db, schedule)
     return None
 
@@ -140,6 +192,13 @@ def entries_index(
     db: Session = Depends(get_db),
     _user=Depends(get_current_user),
 ):
+    schedule = get_schedule(db, schedule_id)
+    if not schedule:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Schedule not found")
+    if getattr(schedule, 'organization_id', None):
+        if not (is_superadmin(_user) or user_assigned_to_org(_user, schedule.organization_id)):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to view entries for this schedule")
+
     entries = list_entries(db, schedule_id)
     return {"data": [_entry_to_dict(entry) for entry in entries]}
 
@@ -154,7 +213,13 @@ def entries_create(
     schedule = get_schedule(db, schedule_id)
     if not schedule:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Schedule not found")
-    require_superadmin(_user)
+    # Allow any user assigned to the schedule's organization to create entries.
+    org = getattr(schedule, "organization_id", None)
+    if org is None:
+        require_superadmin(_user)
+    else:
+        if not (is_superadmin(_user) or user_assigned_to_org(_user, org)):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to create entries for this schedule")
     entry = create_entry(
         db,
         schedule_id,
@@ -182,7 +247,14 @@ def entries_update(
     entry = get_entry(db, entry_id)
     if not entry:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Entry not found")
-    require_superadmin(_user)
+    # Allow any user assigned to the parent schedule's organization to update entries.
+    schedule = get_schedule(db, entry.schedule_id)
+    org = getattr(schedule, "organization_id", None) if schedule else None
+    if org is None:
+        require_superadmin(_user)
+    else:
+        if not (is_superadmin(_user) or user_assigned_to_org(_user, org)):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to update this entry")
     entry = update_entry(
         db,
         entry,
@@ -209,6 +281,13 @@ def entries_delete(
     entry = get_entry(db, entry_id)
     if not entry:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Entry not found")
-    require_superadmin(_user)
+    schedule = get_schedule(db, entry.schedule_id)
+    org = getattr(schedule, "organization_id", None) if schedule else None
+    if org is None:
+        require_superadmin(_user)
+    else:
+        if not (is_superadmin(_user) or user_assigned_to_org(_user, org)):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to delete this entry")
+
     delete_entry(db, entry)
     return None

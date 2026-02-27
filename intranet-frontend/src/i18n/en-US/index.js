@@ -36,6 +36,10 @@ export default {
     update_failed: 'Failed to update user',
     deleted: 'User deleted',
     delete_failed: 'Failed to delete user'
+    ,
+    copy_close: 'Copy & Close',
+    copy_success: 'Password copied',
+    reset_confirm: 'Reset password for {name}? This will generate a new password.',
   },
   adminAssignments: {
     user: 'User',

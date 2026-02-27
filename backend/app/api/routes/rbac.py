@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.api.routes.auth import get_current_user
-from app.core.rbac import require_superadmin, require_org_admin_or_superadmin
+from app.core.rbac import require_superadmin, require_org_admin_or_superadmin, is_superadmin
 from app.db.session import get_db
 from app.schemas.rbac import (
     OrganizationCreate,
@@ -57,7 +57,15 @@ router = APIRouter()
 
 @router.get("/rbac/organizations")
 def organizations_index(db: Session = Depends(get_db), _user=Depends(get_current_user)):
-    orgs = list_organizations(db)
+    # Superadmins may see all organizations
+    if is_superadmin(_user):
+        orgs = list_organizations(db)
+    else:
+        # Otherwise only return organizations the user has assignments for
+        from app.crud.organization import list_organizations_for_user
+
+        orgs = list_organizations_for_user(db, _user.id)
+
     return [OrganizationOut(id=o.id, name=o.name, language=o.language) for o in orgs]
 
 

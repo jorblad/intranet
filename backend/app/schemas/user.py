@@ -14,6 +14,8 @@ class UserUpdate(BaseModel):
     display_name: str | None = None
     password: str | None = None
     is_active: bool | None = None
+    username: str | None = None
+    language: str | None = None
 
 
 class UserSelfUpdate(BaseModel):

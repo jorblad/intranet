@@ -1036,6 +1036,7 @@ export default {
             // refetch scoped data and reload schedule for the new org
             await this.fetchTerms()
             await this.fetchActivities()
+            await this.fetchUsers()
             await this.loadScheduleAndEntries()
             // trigger org-level sync for the newly selected org
             try { if (USE_ORBIT && newVal) orbitSchedules.syncOrganization(newVal).catch(() => {}) } catch (e) {}
@@ -1379,7 +1380,29 @@ export default {
     },
     async fetchUsers() {
       try {
-        const response = await api.get('user/user'); // Update the endpoint path
+        const auth = useAuth()
+        const params = {}
+        // Prefer explicit selectedOrganization; if not set, fall back to the user's single non-global assignment
+        let orgToUse = null
+        try {
+          if (auth.selectedOrganization != null) orgToUse = auth.selectedOrganization
+          else {
+            const assignments = auth.user?.attributes?.assignments || auth.user?.attributes?.assignments || []
+            const nonGlobal = assignments.find(a => a && a.role && !a.role.is_global)
+            if (assignments.length === 1 && nonGlobal && nonGlobal.organization_id) orgToUse = nonGlobal.organization_id
+          }
+        } catch (e) { orgToUse = null }
+        if (orgToUse != null) params.organization_id = orgToUse
+        // Fallback: if auth.selectedOrganization is not set yet, but localStorage contains a selection, use it.
+        try {
+          if (orgToUse == null && typeof localStorage !== 'undefined') {
+            const sid = localStorage.getItem('selected_organization')
+            const s = sid === 'null' ? null : sid
+            if (s != null) params.organization_id = s
+          }
+        } catch (e) {}
+        console.debug('fetchUsers params', params)
+        const response = await api.get('user/user', { params }); // Update the endpoint path
         this.users = response.data.data;
       } catch (error) {
         console.error('Error fetching users:', error);
@@ -1460,15 +1483,23 @@ export default {
         if (auth.selectedOrganization != null) params.organization_id = auth.selectedOrganization
 
         const response = await api.get('schedules', { params });
-        // Prefer a schedule that matches the selected term if multiple are returned
+        // Prefer a schedule that matches the selected term if multiple are returned.
+        // Also prefer a schedule scoped to the selected organization when available.
         let schedule = null;
         const schedules = response.data.data || [];
         if (schedules.length > 0) {
           if (selectedTermId) {
-            schedule = schedules.find((s) => s.relationships?.term?.data?.id === selectedTermId) || schedules[0];
-          } else {
-            schedule = schedules[0];
+            schedule = schedules.find((s) => String(s.term_id) === String(selectedTermId));
           }
+          // If not found by term, prefer a schedule that matches the selected organization
+          if (!schedule) {
+            const selOrg = auth.selectedOrganization != null ? String(auth.selectedOrganization) : null;
+            if (selOrg != null) {
+              schedule = schedules.find((s) => String(s.organization_id || '') === selOrg);
+            }
+          }
+          // fallback to the first schedule if nothing else matched
+          schedule = schedule || schedules[0];
         }
 
         if (!schedule) {
@@ -1489,7 +1520,9 @@ export default {
             term_id: termId,
             activity_id: activityId,
           }
-          if (auth.selectedOrganization != null) createPayload.organization_id = auth.selectedOrganization
+          // Prefer an explicit selected organization; otherwise inherit the activity's organization
+          const orgIdToUse = auth.selectedOrganization != null ? auth.selectedOrganization : (activityObj && activityObj.attributes ? activityObj.attributes.organization_id : null)
+          if (orgIdToUse != null) createPayload.organization_id = orgIdToUse
           const createResponse = await api.post('schedules', createPayload);
           schedule = createResponse.data.data;
         }

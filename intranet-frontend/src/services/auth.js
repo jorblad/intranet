@@ -41,6 +41,19 @@ export async function fetchCurrentUser() {
     } catch (e) {
       state.selectedOrganization = null
     }
+    // If no selected organization in localStorage, and user has exactly one org assignment,
+    // default to that organization so mobile users immediately see scoped data in selects.
+    try {
+      if (state.selectedOrganization == null) {
+        const assignments = res.data.data?.attributes?.assignments || []
+        // find the first non-global assignment
+        const nonGlobal = assignments.find(a => a && a.role && !a.role.is_global)
+        if (assignments.length === 1 && nonGlobal && nonGlobal.organization_id) {
+          state.selectedOrganization = String(nonGlobal.organization_id)
+          try { localStorage.setItem('selected_organization', String(state.selectedOrganization)) } catch (e) {}
+        }
+      }
+    } catch (e) {}
   } catch (err) {
     state.user = null
   }
@@ -50,15 +63,35 @@ export async function fetchOrganizations() {
   try {
     const res = await axios.get('/api/rbac/organizations')
     state.organizations = res.data || []
+    // Ensure selectedOrganization is valid for this user; clear if it's not present
+    try {
+      const sid = state.selectedOrganization
+      if (sid != null) {
+        const ok = state.organizations.some(o => String(o.id) === String(sid))
+        if (!ok) {
+          state.selectedOrganization = null
+          try { localStorage.setItem('selected_organization', String(null)) } catch (e) {}
+        }
+      }
+    } catch (e) {}
   } catch (err) {
     state.organizations = []
   }
 }
 
 export function setSelectedOrganization(orgId) {
-  state.selectedOrganization = orgId == null ? null : orgId
+  // Validate orgId against known organizations; if invalid, clear selection
+  let normalized = orgId == null ? null : String(orgId)
   try {
-    localStorage.setItem('selected_organization', String(orgId))
+    if (normalized != null) {
+      const ok = (state.organizations || []).some(o => String(o.id) === String(normalized))
+      if (!ok) normalized = null
+    }
+  } catch (e) { normalized = null }
+
+  state.selectedOrganization = normalized
+  try {
+    localStorage.setItem('selected_organization', String(normalized))
   } catch (e) {
     // ignore
   }

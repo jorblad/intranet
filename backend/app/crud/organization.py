@@ -19,6 +19,18 @@ def list_organizations(db: Session):
     return db.query(Organization).all()
 
 
+def list_organizations_for_user(db: Session, user_id: str):
+    # Return organizations the user has assignments for (non-global)
+    from app.models import UserOrganizationRole
+
+    return (
+        db.query(Organization)
+        .join(UserOrganizationRole, UserOrganizationRole.organization_id == Organization.id)
+        .filter(UserOrganizationRole.user_id == user_id)
+        .all()
+    )
+
+
 def update_organization(db: Session, org: Organization, name: str | None = None, language: str | None = None):
     if name is not None:
         org.name = name
