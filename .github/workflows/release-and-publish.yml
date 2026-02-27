@@ -106,16 +106,27 @@ jobs:
           docker push ${DOCKERHUB_USERNAME}/intranet-backend:${{ steps.semver.outputs.new_tag }}
           docker push ${DOCKERHUB_USERNAME}/intranet-backend:latest
 
-      - name: Create Git tag and GitHub release
+      - name: Create Git tag and GitHub release (API)
         if: steps.label.outputs.bump != 'none'
-        uses: actions/create-release@v1
-        with:
-          repo_token: ${{ secrets.GITHUB_TOKEN }}
-          tag_name: ${{ steps.semver.outputs.new_tag }}
-          release_name: Release ${{ steps.semver.outputs.new_tag }}
-          body: "Release created by merge PR #${{ github.event.pull_request.number }}"
-          draft: false
-          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NEW_TAG: ${{ steps.semver.outputs.new_tag }}
+        run: |
+          set -e
+          REPO=${{ github.repository }}
+          OWNER=$(echo "$REPO" | cut -d'/' -f1)
+          REPO_NAME=$(echo "$REPO" | cut -d'/' -f2)
+          BODY="Release created by merge PR #${{ github.event.pull_request.number }}"
+          PAYLOAD=$(jq -n --arg tag "${NEW_TAG}" --arg name "Release ${NEW_TAG}" --arg body "$BODY" '{tag_name:$tag, name:$name, body:$body, draft:false, prerelease:false}')
+          resp=$(curl -s -w "%{http_code}" -o /tmp/release_resp -X POST -H "Authorization: token ${GITHUB_TOKEN}" -H "Accept: application/vnd.github+json" -d "$PAYLOAD" "https://api.github.com/repos/${REPO}/releases")
+          if [ "$resp" = "201" ]; then
+            echo "Release created"
+            cat /tmp/release_resp
+          else
+            echo "Failed to create release (HTTP $resp)"
+            cat /tmp/release_resp
+            exit 1
+          fi
 
       - name: Update docker-compose.yml to use released image tag
         if: steps.label.outputs.bump != 'none'
