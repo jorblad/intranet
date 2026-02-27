@@ -110,7 +110,7 @@ jobs:
         if: steps.label.outputs.bump != 'none'
         uses: actions/create-release@v1
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
           tag_name: ${{ steps.semver.outputs.new_tag }}
           release_name: Release ${{ steps.semver.outputs.new_tag }}
           body: "Release created by merge PR #${{ github.event.pull_request.number }}"
