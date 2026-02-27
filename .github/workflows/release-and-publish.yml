@@ -91,11 +91,15 @@ jobs:
             ghcr.io/${{ github.repository_owner }}/intranet-backend:latest
 
       - name: Optionally push to Docker Hub
-        if: steps.label.outputs.bump != 'none' && secrets.DOCKERHUB_USERNAME && secrets.DOCKERHUB_TOKEN
+        if: steps.label.outputs.bump != 'none'
         env:
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
         run: |
+          if [ -z "$DOCKERHUB_USERNAME" ] || [ -z "$DOCKERHUB_TOKEN" ]; then
+            echo "Docker Hub credentials not provided; skipping Docker Hub push"
+            exit 0
+          fi
           echo "$DOCKERHUB_TOKEN" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin
           docker tag ghcr.io/${{ github.repository_owner }}/intranet-backend:${{ steps.semver.outputs.new_tag }} ${DOCKERHUB_USERNAME}/intranet-backend:${{ steps.semver.outputs.new_tag }}
           docker tag ghcr.io/${{ github.repository_owner }}/intranet-backend:latest ${DOCKERHUB_USERNAME}/intranet-backend:latest
