@@ -119,24 +119,24 @@ jobs:
           REPO_OWNER: ${{ github.repository_owner }}
         run: |
           python - <<'PY'
-import re
-import os
-from pathlib import Path
+            import re
+            import os
+            from pathlib import Path
 
-fp = Path('docker-compose.yml')
-txt = fp.read_text()
-repo_owner = os.environ.get('REPO_OWNER', '')
-new_tag = os.environ.get('NEW_TAG', 'latest')
-# Replace a build: context: ./backend block with image entry. This keeps a simple pattern replacement.
-pattern = r"backend:\n(?:\s+.*\n)*?\s+build:\n\s+context: ./backend\n(?:\s+.*\n)*?\s+ports:.*\n"
-replacement = f"backend:\n  image: ghcr.io/{repo_owner}/intranet-backend:{new_tag}\n  ports:\n    - \"8000:8000\"\n"
-txt2 = re.sub(pattern, replacement, txt, flags=re.M)
-if txt2 == txt:
-    print('Pattern not matched; no change made to docker-compose.yml')
-else:
-    fp.write_text(txt2)
-    print('Updated docker-compose.yml to use image tag')
-PY
+            fp = Path('docker-compose.yml')
+            txt = fp.read_text()
+            repo_owner = os.environ.get('REPO_OWNER', '')
+            new_tag = os.environ.get('NEW_TAG', 'latest')
+            # Replace a build: context: ./backend block with image entry. This keeps a simple pattern replacement.
+            pattern = r"backend:\n(?:\s+.*\n)*?\s+build:\n\s+context: ./backend\n(?:\s+.*\n)*?\s+ports:.*\n"
+            replacement = f"backend:\n  image: ghcr.io/{repo_owner}/intranet-backend:{new_tag}\n  ports:\n    - \"8000:8000\"\n"
+            txt2 = re.sub(pattern, replacement, txt, flags=re.M)
+            if txt2 == txt:
+                print('Pattern not matched; no change made to docker-compose.yml')
+            else:
+                fp.write_text(txt2)
+                print('Updated docker-compose.yml to use image tag')
+          PY
 
       - name: Commit docker-compose update to release branch
         if: steps.label.outputs.bump != 'none'
