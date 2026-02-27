@@ -6,7 +6,17 @@ services:
       POSTGRES_PASSWORD: intranet_password
       POSTGRES_DB: intranet_db
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql
+    ports:
+      - "5432:5432"
+  
+  valkey:
+    image: valkey/valkey:latest
+    command: valkey-server
+    ports:
+      - "6379:6379"
+    volumes:
+      - valkey_data:/data
 
   backend:
     build:
@@ -22,6 +32,8 @@ services:
       - "8000:8000"
     depends_on:
       - db
+      - valkey
 
 volumes:
   postgres_data:
+  valkey_data:
