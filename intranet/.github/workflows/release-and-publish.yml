@@ -117,16 +117,16 @@ jobs:
           NEW_TAG: ${{ steps.semver.outputs.new_tag }}
         run: |
           python - <<'PY'
-import re
-from pathlib import Path
-fp = Path('docker-compose.yml')
-txt = fp.read_text()
-# Replace a build: context: ./backend block with image entry. This keeps a simple pattern replacement.
-txt = re.sub(r"backend:\n(?:\s+.*\n)*?\s+build:\n\s+context: ./backend\n(?:\s+.*\n)*?\s+ports:.*\n", \
-             f"backend:\n  image: ghcr.io/${{GITHUB_REPOSITORY_OWNER}}/intranet-backend:${{NEW_TAG}}\n  ports:\n    - \"8000:8000\"\n", txt, flags=re.M)
-fp.write_text(txt)
-print('Updated docker-compose.yml to use image tag')
-PY
+            import re
+            from pathlib import Path
+            fp = Path('docker-compose.yml')
+            txt = fp.read_text()
+            # Replace a build: context: ./backend block with image entry. This keeps a simple pattern replacement.
+            txt = re.sub(r"backend:\n(?:\s+.*\n)*?\s+build:\n\s+context: ./backend\n(?:\s+.*\n)*?\s+ports:.*\n", \
+                        f"backend:\n  image: ghcr.io/${{GITHUB_REPOSITORY_OWNER}}/intranet-backend:${{NEW_TAG}}\n  ports:\n    - \"8000:8000\"\n", txt, flags=re.M)
+            fp.write_text(txt)
+            print('Updated docker-compose.yml to use image tag')
+            PY
 
       - name: Commit docker-compose update
         if: steps.label.outputs.bump != 'none'

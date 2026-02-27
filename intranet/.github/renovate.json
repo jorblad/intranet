@@ -1,0 +1,38 @@
+{
+  "extends": ["config:base"],
+  "timezone": "Europe/Stockholm",
+  "labels": ["dependencies"],
+  "prHourlyLimit": 2,
+  "prConcurrentLimit": 5,
+  "ignorePaths": ["**/dist/**", "**/node_modules/**"],
+  "semanticCommits": "enabled",
+  "packageRules": [
+    {
+      "matchUpdateTypes": ["patch", "minor"],
+      "automerge": true,
+      "automergeType": "branch",
+      "groupName": "all patch and minor updates"
+    },
+    {
+      "matchUpdateTypes": ["major"],
+      "automerge": false,
+      "groupName": "major updates (manual review)"
+    },
+    {
+      "matchManagers": ["dockerfile", "docker-compose"],
+      "matchDatasources": ["docker"],
+      "groupName": "docker image updates",
+      "automerge": true
+    },
+    {
+      "matchManagers": ["pip_requirements", "pip_setup"],
+      "groupName": "python dependencies",
+      "automerge": true
+    },
+    {
+      "matchManagers": ["npm"],
+      "groupName": "frontend dependencies",
+      "automerge": false
+    }
+  ]
+}
