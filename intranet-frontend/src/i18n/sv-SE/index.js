@@ -137,7 +137,10 @@ export default {
     bulk_edit_instructions: 'Redigera de valda raderna. Lämna fält tomma för att behålla nuvarande värden.',
     bulk_delete: 'Ta bort flera',
     bulk_delete_confirm_text: 'Är du säker på att du vill ta bort de valda raderna?',
-    select_all_visible: 'Välj alla synliga'
+    select_all_visible: 'Välj alla synliga',
+    copy_activity_calendar: 'Kopiera aktivitetskalenderlänk',
+    activity_link_copied: 'Aktivitetskalenderlänk kopierad'
+
   ,
     term: 'Termin',
     activity: 'Aktivitet',
