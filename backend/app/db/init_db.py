@@ -128,32 +128,56 @@ def init_db() -> None:
                 organization_id=None,
             )
             db.add_all([activity_a, activity_b])
+        else:
+            # If terms already exist (e.g., restoring from an existing DB), pick
+            # a sensible default term to attach seeded schedules to.
+            term_fall = db.query(Term).first()
 
         if not db.query(Schedule).first():
             if not activity_a:
                 activity_a = db.query(Activity).first()
             if activity_a:
-                schedule = Schedule(
-                    id=str(uuid.uuid4()),
-                    name=f"Schema {activity_a.name}",
-                    term_id=term_fall.id,
-                    activity_id=activity_a.id,
+                # Only create the schedule if an identical record doesn't already exist
+                existing = (
+                    db.query(Schedule)
+                    .filter(Schedule.name == f"Schema {activity_a.name}")
+                    .filter(Schedule.term_id == term_fall.id)
+                    .filter(Schedule.activity_id == activity_a.id)
+                    .first()
                 )
-                db.add(schedule)
-                db.flush()
+                if not existing:
+                    schedule = Schedule(
+                        id=str(uuid.uuid4()),
+                        name=f"Schema {activity_a.name}",
+                        term_id=term_fall.id,
+                        activity_id=activity_a.id,
+                    )
+                    db.add(schedule)
+                    db.flush()
+                else:
+                    schedule = existing
 
-                entry = ScheduleEntry(
-                    id=str(uuid.uuid4()),
-                    schedule_id=schedule.id,
-                    date=date(2023, 9, 6),
-                    name="Start",
-                    description="Kickoff",
-                    notes="",
-                    public_event=True,
+                # Only seed the example entry if it doesn't already exist for this schedule/date/name
+                existing_entry = (
+                    db.query(ScheduleEntry)
+                    .filter(ScheduleEntry.schedule_id == schedule.id)
+                    .filter(ScheduleEntry.date == date(2023, 9, 6))
+                    .filter(ScheduleEntry.name == "Start")
+                    .first()
                 )
-                if admin_user:
-                    entry.responsible_users = [admin_user]
-                db.add(entry)
+                if not existing_entry:
+                    entry = ScheduleEntry(
+                        id=str(uuid.uuid4()),
+                        schedule_id=schedule.id,
+                        date=date(2023, 9, 6),
+                        name="Start",
+                        description="Kickoff",
+                        notes="",
+                        public_event=True,
+                    )
+                    if admin_user:
+                        entry.responsible_users = [admin_user]
+                    db.add(entry)
 
         db.commit()
     finally:

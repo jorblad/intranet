@@ -90,18 +90,48 @@ def schedules_create(
     db: Session = Depends(get_db),
     _user=Depends(get_current_user),
 ):
-    # Allow any user assigned to the organization to create schedules for that org;
-    # creating a global (no organization) schedule requires superadmin.
+    # Require an explicit organization_id for new schedules. If the requester
+    # is assigned to exactly one organization and did not provide one, default
+    # to that org. Superadmins or users with multiple orgs must provide
+    # `organization_id` in the payload; creating a global (null) schedule is
+    # disallowed for all users.
     org_id = getattr(payload, "organization_id", None)
-    if org_id is None:
-        require_superadmin(_user)
-    else:
-        if not (is_superadmin(_user) or user_assigned_to_org(_user, org_id)):
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to create schedule for this organization")
+    try:
+        from app.crud.organization import list_organizations_for_user
 
-    schedule = create_schedule(
-        db, payload.name, payload.term_id, payload.activity_id, getattr(payload, "organization_id", None)
-    )
+        assigned = list_organizations_for_user(db, _user.id)
+    except Exception:
+        assigned = []
+
+    if org_id is None:
+        # default to single assigned org if available
+        if len(assigned) == 1:
+            org_id = str(assigned[0].id)
+        else:
+            # require explicit org when user has multiple orgs or is superadmin
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="organization_id is required")
+
+    # Verify the requester may create schedules for this organization
+    if not (is_superadmin(_user) or user_assigned_to_org(_user, org_id)):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to create schedule for this organization")
+
+    # Avoid creating duplicate schedules when clients race: if a schedule
+    # with the same name/activity/term/organization already exists, return it.
+    org_val = org_id
+    q = db.query(Schedule).filter(Schedule.name == payload.name)
+    q = q.filter(Schedule.term_id == payload.term_id)
+    q = q.filter(Schedule.activity_id == payload.activity_id)
+    if org_val is not None:
+        q = q.filter(Schedule.organization_id == org_val)
+    else:
+        q = q.filter(Schedule.organization_id.is_(None))
+    existing = q.first()
+    if existing:
+        schedule = existing
+    else:
+        schedule = create_schedule(
+            db, payload.name, payload.term_id, payload.activity_id, org_val
+        )
     return {
         "data": {
             "id": schedule.id,

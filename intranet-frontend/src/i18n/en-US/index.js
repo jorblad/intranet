@@ -128,6 +128,7 @@ export default {
   termschedules: {
     title: 'Schedules',
     save: 'Save',
+    select_org_before_create: 'Please select an organization before creating a schedule',
     cancel: 'Cancel',
     new_row: 'New row',
     add_rows: 'Add rows',
@@ -154,6 +155,9 @@ export default {
   termschedules_extras: {
     copy_activity_calendar: 'Copy activity calendar link',
     activity_link_copied: 'Activity calendar link copied'
+    ,
+    copy_public_calendar: 'Copy public calendar link',
+    public_link_copied: 'Public calendar link copied'
   }
   }
   ,

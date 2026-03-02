@@ -55,6 +55,7 @@
                     @new-value="handleActivityNew"
                 />
                 <q-btn flat dense round icon="link" size="sm" class="q-ml-sm" v-if="activity" @click="copyActivityPublicLink" :title="$t('termschedules.copy_activity_calendar')" />
+                <q-btn flat dense round icon="public" size="sm" class="q-ml-sm" @click="copyPublicCalendarLink" :title="$t('termschedules.copy_public_calendar')" />
               </q-item-section>
             </q-item>
 
@@ -70,6 +71,7 @@
                 @click="addRow"
               ></q-btn>
               <q-btn flat dense round icon="link" size="sm" class="q-ml-sm" v-if="activity" @click="copyActivityPublicLink" :title="$t('termschedules.copy_activity_calendar')" />
+              <q-btn flat dense round icon="public" size="sm" class="q-ml-sm" @click="copyPublicCalendarLink" :title="$t('termschedules.copy_public_calendar')" />
               </q-item-section>
             </q-item>
           </q-list>
@@ -1458,6 +1460,16 @@ export default {
         this.$q.notify({ type: 'negative', message: this.$t('failed') })
       }
     },
+    copyPublicCalendarLink() {
+      try {
+        const url = `${window.location.origin}/api/calendars/public.ics`
+        navigator.clipboard.writeText(url)
+        this.$q.notify({ type: 'positive', message: this.$t('termschedules.public_link_copied') })
+      } catch (e) {
+        console.error('Failed to copy public calendar link', e)
+        this.$q.notify({ type: 'negative', message: this.$t('failed') })
+      }
+    },
     async loadScheduleAndEntries() {
       // normalize program and term values (can be option objects from q-select)
       const activityId = this.normalizeToId(this.activity);
@@ -1521,7 +1533,33 @@ export default {
             activity_id: activityId,
           }
           // Prefer an explicit selected organization; otherwise inherit the activity's organization
-          const orgIdToUse = auth.selectedOrganization != null ? auth.selectedOrganization : (activityObj && activityObj.attributes ? activityObj.attributes.organization_id : null)
+          let orgIdToUse = null
+          try {
+            if (auth.selectedOrganization != null) orgIdToUse = auth.selectedOrganization
+            else if (activityObj && activityObj.attributes && activityObj.attributes.organization_id) orgIdToUse = activityObj.attributes.organization_id
+            else {
+              // If user has exactly one non-global assignment, default to it
+              const assignments = auth.user?.attributes?.assignments || []
+              const nonGlobal = assignments.filter(a => a && a.role && !a.role.is_global)
+              if (nonGlobal.length === 1 && nonGlobal[0].organization_id) orgIdToUse = nonGlobal[0].organization_id
+            }
+          } catch (e) { orgIdToUse = null }
+
+          // If orgId is still null and the user is a superadmin or has multiple org assignments,
+          // require the user to select an organization rather than auto-creating a global schedule.
+          try {
+            const isSuper = !!(auth.user && auth.user.attributes && auth.user.attributes.role && auth.user.attributes.role.is_superadmin)
+            const assignments = auth.user?.attributes?.assignments || []
+            const nonGlobalCount = assignments.filter(a => a && a.role && !a.role.is_global).length
+            if (orgIdToUse == null && (isSuper || nonGlobalCount > 1)) {
+              this.$q.notify({ type: 'warning', message: this.$t('termschedules.select_org_before_create') })
+              this.scheduleId = null
+              this.rows = []
+              this.isLoadingEntries = false
+              return
+            }
+          } catch (e) {}
+
           if (orgIdToUse != null) createPayload.organization_id = orgIdToUse
           const createResponse = await api.post('schedules', createPayload);
           schedule = createResponse.data.data;

@@ -133,6 +133,7 @@ export default {
   termschedules: {
     title: 'Scheman',
     save: 'Spara',
+    select_org_before_create: 'Vänligen välj en organisation innan du skapar ett schema',
     cancel: 'Avbryt',
     new_row: 'Ny rad',
     add_rows: 'Lägg till rader',
@@ -170,6 +171,9 @@ export default {
   termschedules_extras: {
     copy_activity_calendar: 'Kopiera aktivitetskalenderlänk',
     activity_link_copied: 'Aktivitetskalenderlänk kopierad'
+    ,
+    copy_public_calendar: 'Kopiera publik kalenderlänk',
+    public_link_copied: 'Publik kalenderlänk kopierad'
   }
 
   ,common: {

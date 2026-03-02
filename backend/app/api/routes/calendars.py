@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from app.api.routes.auth import get_current_user
 from app.db.session import get_db
 from app.models import ScheduleEntry, User
+from app.crud.organization import list_organizations_for_user
 import datetime
 
 router = APIRouter()
@@ -85,6 +86,11 @@ def personal_calendar(db: Session = Depends(get_db), _user: User = Depends(get_c
         "VERSION:2.0",
         "PRODID:-//Intranet//EN",
     ]
+    # compute organizations the user belongs to so org-members can get schedule events
+    try:
+        assigned_orgs = {str(o.id) for o in list_organizations_for_user(db, _user.id)}
+    except Exception:
+        assigned_orgs = set()
     for e in entries:
         # relationships may be lazy; check membership
         user_id = _user.id
@@ -93,7 +99,16 @@ def personal_calendar(db: Session = Depends(get_db), _user: User = Depends(get_c
         cant_come_ids = {u.id for u in e.cant_come_users}
         if user_id in cant_come_ids:
             continue
+        # include if explicitly assigned to the entry, or if the entry belongs to a schedule
+        # in an organization the user is a member of
+        include = False
         if user_id in responsible_ids or user_id in devotional_ids:
+            include = True
+        else:
+            schedule_org = getattr(e.schedule, 'organization_id', None)
+            if schedule_org and str(schedule_org) in assigned_orgs:
+                include = True
+        if include:
             cal_lines.append(_entry_to_vevent(e))
     cal_lines.append("END:VCALENDAR")
     ics = "\r\n".join(cal_lines) + "\r\n"
@@ -114,6 +129,11 @@ def personal_calendar_token(db: Session = Depends(get_db), token: str = None):
         "VERSION:2.0",
         "PRODID:-//Intranet//EN",
     ]
+    # include entries for org-members as well as explicit assignment
+    try:
+        assigned_orgs = {str(o.id) for o in list_organizations_for_user(db, user.id)}
+    except Exception:
+        assigned_orgs = set()
     for e in entries:
         user_id = user.id
         responsible_ids = {u.id for u in e.responsible_users}
@@ -121,7 +141,14 @@ def personal_calendar_token(db: Session = Depends(get_db), token: str = None):
         cant_come_ids = {u.id for u in e.cant_come_users}
         if user_id in cant_come_ids:
             continue
+        include = False
         if user_id in responsible_ids or user_id in devotional_ids:
+            include = True
+        else:
+            schedule_org = getattr(e.schedule, 'organization_id', None)
+            if schedule_org and str(schedule_org) in assigned_orgs:
+                include = True
+        if include:
             cal_lines.append(_entry_to_vevent(e))
     cal_lines.append("END:VCALENDAR")
     ics = "\r\n".join(cal_lines) + "\r\n"
