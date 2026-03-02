@@ -9,7 +9,7 @@
 // https://v2.quasar.dev/quasar-cli-vite/quasar-config-js
 
 
-import { configure } from 'quasar/wrappers'
+import { defineConfig } from '#q-app/wrappers'
 import path from 'path'
 import { fileURLToPath } from 'url'
 
@@ -19,7 +19,7 @@ const __dirname = path.dirname(__filename)
 const apiProxyTarget = process.env.API_PROXY_TARGET || 'http://localhost:8000';
 const wsProxyTarget = apiProxyTarget.replace(/^http/, 'ws');
 
-export default configure(function (/* ctx */) {
+export default defineConfig((ctx) => {
   return {
     eslint: {
       // fix: true,
@@ -87,16 +87,9 @@ export default configure(function (/* ctx */) {
       // viteVuePluginOptions: {},
 
       vitePlugins: [
-        ['@intlify/vite-plugin-vue-i18n', {
-          // if you want to use Vue I18n Legacy API, you need to set `compositionOnly: false`
-          // compositionOnly: false,
-
-          // if you want to use named tokens in your Vue I18n messages, such as 'Hello {name}',
-          // you need to set `runtimeOnly: false`
-          // runtimeOnly: false,
-
-          // you need to set i18n resource including paths !
-          include: path.resolve(__dirname, './src/i18n/**')
+        ['@intlify/unplugin-vue-i18n/vite', {
+          include: [ fileURLToPath(new URL('./src/i18n', import.meta.url)) ],
+          ssr: ctx.modeName === 'ssr'
         }]
       ]
     },
