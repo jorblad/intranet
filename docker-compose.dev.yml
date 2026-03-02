@@ -40,7 +40,7 @@ services:
       - valkey
 
   frontend:
-    image: node:18
+    image: node:20
     working_dir: /app
     command: sh -c "npm install && npm run dev -- --host 0.0.0.0 --port 9000 --no-open"
     environment:
