@@ -122,6 +122,11 @@ class PubSub:
             if client is not None:
                 self._valkey_client = client
                 self._valkey_usable = True
+                # remember the loop we used to start the valkey subscribe task
+                try:
+                    self._loop = asyncio.get_event_loop()
+                except Exception:
+                    self._loop = None
                 # surface client type for diagnostics
                 try:
                     client_repr = f"{type(client).__module__}.{type(client).__name__}"
@@ -138,6 +143,38 @@ class PubSub:
         except ModuleNotFoundError:
             self._valkey_usable = False
             logger.info("PubSub: valkey not installed; using local in-process pubsub")
+
+    def schedule_publish(self, message: str):
+        """Schedule a publish from non-async/synchronous code (thread-safe).
+
+        Uses the event loop that was active when PubSub initialized (if available)
+        via `asyncio.run_coroutine_threadsafe`. Falls back to creating a task
+        on the currently running loop if possible.
+        """
+        # Prefer run_coroutine_threadsafe when we have a known loop
+        try:
+            loop = getattr(self, "_loop", None)
+            if loop is not None:
+                try:
+                    asyncio.run_coroutine_threadsafe(self.publish(message), loop)
+                    return True
+                except Exception:
+                    pass
+            # fallback: try scheduling on current running loop
+            try:
+                cur = asyncio.get_running_loop()
+                cur.create_task(self.publish(message))
+                return True
+            except Exception:
+                pass
+        except Exception:
+            pass
+        # Last resort: run synchronously (blocking) to ensure publish happens
+        try:
+            asyncio.run(self.publish(message))
+            return True
+        except Exception:
+            return False
 
     async def _valkey_subscribe_loop(self):
         """Best-effort subscription loop for valkey client. Calls registered handlers when messages arrive.
@@ -249,14 +286,11 @@ class PubSub:
                     # (which ignores messages originating from this pid) will still
                     # forward the inner payload to connected websockets.
                     try:
-                        parsed_msg = None
-                        if isinstance(message, str):
-                            parsed_msg = __import__('json').loads(message)
-                        if isinstance(parsed_msg, dict) and parsed_msg.get('__origin_pid') is not None and 'payload' in parsed_msg:
-                            inner = parsed_msg.get('payload')
-                            await self._call_handlers(__import__('json').dumps(inner))
-                        else:
-                            await self._call_handlers(message)
+                        # Call local handlers with the full envelope so local
+                        # forwarders can inspect `__origin_pid` and avoid echoing
+                        # messages back to the originating process. Unwrapping the
+                        # envelope here prevents that check and can cause loops.
+                        await self._call_handlers(message)
                     except Exception:
                         # fallback to calling handlers with raw message
                         await self._call_handlers(message)
@@ -268,14 +302,10 @@ class PubSub:
                         await maybe
                     logger.info("PubSub: valkey put succeeded; calling local handlers")
                     try:
-                        parsed_msg = None
-                        if isinstance(message, str):
-                            parsed_msg = __import__('json').loads(message)
-                        if isinstance(parsed_msg, dict) and parsed_msg.get('__origin_pid') is not None and 'payload' in parsed_msg:
-                            inner = parsed_msg.get('payload')
-                            await self._call_handlers(__import__('json').dumps(inner))
-                        else:
-                            await self._call_handlers(message)
+                        # See note above: prefer delivering the full envelope to
+                        # local handlers so they can ignore messages originating
+                        # from this pid and avoid duplicate local delivery.
+                        await self._call_handlers(message)
                     except Exception:
                         await self._call_handlers(message)
                     return
@@ -289,16 +319,13 @@ class PubSub:
         # receives the inner payload (important when valkey isn't available).
         logger.info("PubSub: publishing via local handlers (count=%d)", len(self._handlers))
         try:
-            parsed = None
-            if isinstance(message, str):
-                parsed = json.loads(message)
-            if isinstance(parsed, dict) and parsed.get('__origin_pid') is not None and 'payload' in parsed:
-                inner = parsed.get('payload')
-                await self._call_handlers(json.dumps(inner))
-            else:
-                await self._call_handlers(message)
+            # Deliver the full envelope to local handlers so that handlers
+            # (like the websocket forwarder) can detect `__origin_pid` and
+            # avoid echoing messages back to the origin process. Unwrapping
+            # here removes that signal and may cause loops.
+            await self._call_handlers(message)
         except Exception:
-            # fallback to raw message if parsing/unwrapping fails
+            # fallback to raw message if anything goes wrong
             await self._call_handlers(message)
 
     def register_handler(self, handler: Callable[[str], None]):

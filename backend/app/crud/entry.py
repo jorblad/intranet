@@ -50,6 +50,58 @@ def create_entry(
     return entry
 
 
+def bulk_create_entries(db: Session, schedule_id: str, entries_data: list[dict]) -> list[ScheduleEntry]:
+    created = []
+    try:
+        for entry in entries_data:
+            e = ScheduleEntry(
+                schedule_id=schedule_id,
+                date=entry.get('date'),
+                start=entry.get('start'),
+                end=entry.get('end'),
+                name=entry.get('name'),
+                description=entry.get('description'),
+                notes=entry.get('notes'),
+                public_event=bool(entry.get('public_event')),
+            )
+            db.add(e)
+            # resolve relationships after flush
+            created.append((e, entry))
+        db.flush()
+        # assign relationships
+        for e_obj, src in created:
+            def _resolve_ids(arr):
+                if not arr:
+                    return []
+                out = []
+                for a in arr:
+                    if isinstance(a, dict):
+                        if 'value' in a:
+                            out.append(str(a.get('value')))
+                        elif 'id' in a:
+                            out.append(str(a.get('id')))
+                    else:
+                        out.append(str(a))
+                return out
+
+            resp_ids = _resolve_ids(src.get('responsible_ids') or src.get('responsible'))
+            dev_ids = _resolve_ids(src.get('devotional_ids') or src.get('devotional'))
+            cant_ids = _resolve_ids(src.get('cant_come_ids') or src.get('cant_come'))
+            e_obj.responsible_users = _resolve_users(db, resp_ids)
+            e_obj.devotional_users = _resolve_users(db, dev_ids)
+            e_obj.cant_come_users = _resolve_users(db, cant_ids)
+        db.commit()
+        # refresh and return
+        out = []
+        for e_obj, _ in created:
+            db.refresh(e_obj)
+            out.append(e_obj)
+        return out
+    except Exception:
+        db.rollback()
+        raise
+
+
 def update_entry(
     db: Session,
     entry: ScheduleEntry,
@@ -92,3 +144,50 @@ def update_entry(
 def delete_entry(db: Session, entry: ScheduleEntry) -> None:
     db.delete(entry)
     db.commit()
+
+
+def bulk_update_entries(db: Session, schedule_id: str, updates: list[dict]) -> list[ScheduleEntry]:
+    """Apply multiple entry updates in a single transaction and return updated objects.
+
+    Each update dict must include 'id' and any update fields.
+    """
+    updated = []
+    skipped = []
+    try:
+        for u in updates:
+            eid = u.get('id')
+            if not eid:
+                skipped.append({'id': None, 'reason': 'missing id'})
+                continue
+            # skip local placeholder ids created by clients prior to server persistence
+            if isinstance(eid, str) and eid.startswith('local-'):
+                skipped.append({'id': eid, 'reason': 'local placeholder id'})
+                continue
+            entry = db.query(ScheduleEntry).filter(ScheduleEntry.id == eid, ScheduleEntry.schedule_id == schedule_id).first()
+            if not entry:
+                skipped.append({'id': eid, 'reason': 'not found or wrong schedule'})
+                continue
+            entry = update_entry(
+                db,
+                entry,
+                u.get('date', None),
+                u.get('start', None),
+                u.get('end', None),
+                u.get('name', None),
+                u.get('description', None),
+                u.get('notes', None),
+                u.get('public_event', None),
+                u.get('responsible_ids', None),
+                u.get('devotional_ids', None),
+                u.get('cant_come_ids', None),
+            )
+            updated.append(entry)
+        try:
+            if skipped:
+                print(f"bulk_update_entries: skipped {len(skipped)} items: {skipped}")
+        except Exception:
+            pass
+        return updated
+    except Exception:
+        db.rollback()
+        raise

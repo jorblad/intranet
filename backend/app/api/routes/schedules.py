@@ -5,6 +5,7 @@ from app.api.routes.auth import get_current_user
 from app.core.rbac import require_org_admin_or_superadmin
 from app.core.rbac import require_superadmin
 from app.core.rbac import user_assigned_to_org, is_superadmin
+from app.models import Schedule
 from app.crud import (
     create_entry,
     create_schedule,
@@ -18,8 +19,17 @@ from app.crud import (
     update_schedule,
 )
 from app.db.session import get_db
-from app.schemas.entry import EntryCreate, EntryUpdate
+from app.schemas.entry import EntryCreate, EntryUpdate, EntryBulkUpdate
+from typing import List
+from typing import List
+from app.schemas.entry import EntryBase
 from app.schemas.schedule import ScheduleCreate, ScheduleUpdate
+import asyncio
+import json
+import os
+
+# reuse the ws pubsub instance so published messages are forwarded to connected websockets
+from app.api.routes.ws import _pubsub
 
 router = APIRouter()
 
@@ -129,9 +139,15 @@ def schedules_create(
     if existing:
         schedule = existing
     else:
-        schedule = create_schedule(
-            db, payload.name, payload.term_id, payload.activity_id, org_val
-        )
+        try:
+            schedule = create_schedule(
+                db, payload.name, payload.term_id, payload.activity_id, org_val
+            )
+        except Exception as e:
+            # Log the exception for debugging and return a 500 with a concise message
+            import traceback
+            traceback.print_exc()
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
     return {
         "data": {
             "id": schedule.id,
@@ -265,6 +281,120 @@ def entries_create(
         payload.cant_come_ids,
     )
     return {"data": _entry_to_dict(entry)}
+
+
+@router.patch("/schedules/{schedule_id}/entries/bulk", status_code=status.HTTP_200_OK)
+def entries_bulk_update(
+    schedule_id: str,
+    payload: List[EntryBulkUpdate],
+    db: Session = Depends(get_db),
+    _user=Depends(get_current_user),
+):
+    schedule = get_schedule(db, schedule_id)
+    if not schedule:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Schedule not found")
+    org = getattr(schedule, "organization_id", None)
+    if org is None:
+        require_superadmin(_user)
+    else:
+        if not (is_superadmin(_user) or user_assigned_to_org(_user, org)):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to update entries for this schedule")
+
+    try:
+        from app.crud.entry import bulk_update_entries
+        updates = [p.dict(exclude_unset=True) for p in payload]
+        try:
+            print(f"entries_bulk_update: received {len(updates)} updates")
+        except Exception:
+            pass
+        # Filter out client-local placeholder ids (e.g., 'local-...') which are not persisted
+        filtered = []
+        skipped = []
+        for u in updates:
+            eid = u.get('id')
+            if isinstance(eid, str) and eid.startswith('local-'):
+                skipped.append(eid)
+                continue
+            filtered.append(u)
+        try:
+            if skipped:
+                print(f"entries_bulk_update: filtered out {len(skipped)} local placeholder ids: {skipped}")
+        except Exception:
+            pass
+        updated = bulk_update_entries(db, schedule_id, filtered)
+    except ValueError as e:
+        # Validation / client errors (e.g., missing id or invalid ownership) -> 400
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except Exception as e:
+        # Unexpected server error: log full traceback for debugging
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal server error")
+
+    # publish a notification to other connected clients so they can refresh
+    try:
+        # publish rows mapping so the frontend Orbit handler can apply them
+        rows_map = {schedule_id: [_entry_to_dict(e) for e in updated]}
+        transform = {"rows": rows_map}
+        payload = {"type": "transform", "transform": transform}
+        envelope = json.dumps({"__origin_pid": os.getpid(), "payload": payload})
+        try:
+            print(f"entries_bulk_update: scheduling publish envelope (len={len(envelope)}) preview={envelope[:200]}")
+            _pubsub.schedule_publish(envelope)
+        except Exception:
+            pass
+    except Exception:
+        pass
+
+    return {"data": [_entry_to_dict(e) for e in updated]}
+
+
+@router.post("/schedules/{schedule_id}/entries/bulk", status_code=status.HTTP_201_CREATED)
+def entries_bulk_create(
+    schedule_id: str,
+    payload: List[EntryCreate],
+    db: Session = Depends(get_db),
+    _user=Depends(get_current_user),
+):
+    schedule = get_schedule(db, schedule_id)
+    if not schedule:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Schedule not found")
+    org = getattr(schedule, "organization_id", None)
+    if org is None:
+        require_superadmin(_user)
+    else:
+        if not (is_superadmin(_user) or user_assigned_to_org(_user, org)):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to create entries for this schedule")
+
+    # normalize payload to list of dicts suitable for bulk create
+    entries_data = []
+    for p in payload:
+        entries_data.append(p.dict())
+
+    try:
+        from app.crud.entry import bulk_create_entries
+
+        created = bulk_create_entries(db, schedule_id, entries_data)
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+    # publish created entries so other clients receive authoritative entries
+    try:
+        rows_map = {schedule_id: [_entry_to_dict(e) for e in created]}
+        transform = {"rows": rows_map}
+        payload = {"type": "transform", "transform": transform}
+        envelope = json.dumps({"__origin_pid": os.getpid(), "payload": payload})
+        try:
+            print(f"entries_bulk_create: scheduling publish envelope (len={len(envelope)}) preview={envelope[:200]}")
+            _pubsub.schedule_publish(envelope)
+        except Exception:
+            pass
+    except Exception:
+        pass
+
+    return {"data": [_entry_to_dict(e) for e in created]}
 
 
 @router.patch("/entries/{entry_id}")

@@ -536,10 +536,14 @@
             </div>
           </div>
         </q-card-section>
-          <q-card-actions>
-          <q-btn flat :label="$t('termschedules.cancel')" color="secondary" @click="cancelBulkChanges" />
+        <div v-if="bulkProcessing" class="q-pa-sm">
+          <q-linear-progress :value="bulkProgressTotal ? (bulkProgressCount / bulkProgressTotal) : 0" color="primary" />
+          <div class="text-caption q-mt-sm">{{ bulkProgressCount }} / {{ bulkProgressTotal }}</div>
+        </div>
+        <q-card-actions>
+          <q-btn flat :label="$t('termschedules.cancel')" color="secondary" @click="cancelBulkChanges" :disabled="bulkProcessing" />
           <q-space />
-          <q-btn flat :label="$t('termschedules.save')" color="primary" @click="saveBulkChanges" :disabled="!selectedRows || selectedRows.length === 0" />
+          <q-btn flat :label="$t('termschedules.save')" color="primary" @click="saveBulkChanges" :loading="bulkProcessing" :disabled="bulkProcessing || !selectedRows || selectedRows.length === 0" />
         </q-card-actions>
       </q-card>
     </q-dialog>
@@ -574,9 +578,9 @@
           <q-input id="new-entry-notes" name="new-entry-notes" v-model="newEntry.notes" label="Anteckningar" />
         </q-card-section>
         <q-card-actions>
-          <q-btn flat label="Avbryt" color="secondary" @click="addEntryDialogVisible = false" />
+          <q-btn flat label="Avbryt" color="secondary" @click="addEntryDialogVisible = false" :disabled="addEntryProcessing" />
           <q-space />
-          <q-btn flat label="Skapa" color="primary" @click="createEntriesFromRecurrence" />
+          <q-btn flat label="Skapa" color="primary" @click="createEntriesFromRecurrence" :loading="addEntryProcessing" :disabled="addEntryProcessing" />
         </q-card-actions>
       </q-card>
     </q-dialog>
@@ -911,6 +915,11 @@ export default {
       users: [],
       terms: [],
       activities: [],
+      addEntryProcessing: false,
+      // bulk-edit progress state
+      bulkProcessing: false,
+      bulkProgressTotal: 0,
+      bulkProgressCount: 0,
           // Create term/activity UI state
           createTermDialogVisible: false,
           createActivityDialogVisible: false,
@@ -974,6 +983,35 @@ export default {
 
     async mounted() {
       this.setupAxiosInterceptors();
+      // If there are pending transforms persisted from a previous offline session,
+      // attempt to flush them before bootstrapping fresh server state to avoid
+      // server fetches overwriting optimistic local changes.
+      try {
+        if (typeof orbitSchedules !== 'undefined' && typeof orbitSchedules.getPendingQueue === 'function') {
+          const pq = await orbitSchedules.getPendingQueue()
+          if (Array.isArray(pq) && pq.length > 0) {
+            try {
+              // ensure websocket is open, then flush pending with a short timeout
+              if (typeof orbitSchedules.connectWebsocket === 'function') orbitSchedules.connectWebsocket()
+              const waitForWsOpen = async (timeout = 5000) => {
+                const start = Date.now()
+                while (Date.now() - start < timeout) {
+                  try { if (orbitSchedules.ws && orbitSchedules.ws.readyState === WebSocket.OPEN) return true } catch (e) {}
+                  // eslint-disable-next-line no-await-in-loop
+                  await new Promise(r => setTimeout(r, 150))
+                }
+                return false
+              }
+              const opened = await waitForWsOpen(4000)
+              if (opened && typeof orbitSchedules.flushPending === 'function') {
+                try {
+                  await orbitSchedules.flushPending()
+                } catch (e) { console.warn('mounted: flushPending failed', e) }
+              }
+            } catch (e) { console.warn('mounted: attempted pending flush failed', e) }
+          }
+        }
+      } catch (e) { console.warn('mounted: pending queue check failed', e) }
       await this.fetchUsers();
       await this.fetchTerms();
       // restore saved term/activity selections from localStorage
@@ -1789,6 +1827,8 @@ export default {
       };
 
       const createdEntries = [];
+      const tasks = [];
+      const bulkPayloads = [];
       if (this.newEntry.frequency === 'none' || weekdays.length === 0) {
         const singleDate = new Date(this.newEntry.start_date);
         if (isNaN(singleDate.getTime())) {
@@ -1806,16 +1846,15 @@ export default {
             devotional_ids: [],
             cant_come_ids: [],
           };
-          try {
-            if (USE_ORBIT) {
-              await orbitSchedules.createEntry(this.scheduleId, Object.assign({ id: null }, payload))
-            } else {
-              const resp = await api.post(`schedules/${this.scheduleId}/entries`, payload);
-              createdEntries.push(resp.data.data);
+            try {
+              if (USE_ORBIT) {
+                tasks.push(orbitSchedules.createEntry(this.scheduleId, Object.assign({ id: null }, payload)))
+              } else {
+                bulkPayloads.push(payload)
+              }
+            } catch (err) {
+              console.error('Error creating single entry:', err);
             }
-          } catch (err) {
-            console.error('Error creating single entry:', err);
-          }
         }
       } else {
         // iterate week mondays from start to end
@@ -1851,10 +1890,9 @@ export default {
             };
             try {
               if (USE_ORBIT) {
-                await orbitSchedules.createEntry(this.scheduleId, Object.assign({ id: null }, payload))
+                tasks.push(orbitSchedules.createEntry(this.scheduleId, Object.assign({ id: null }, payload)))
               } else {
-                const resp = await api.post(`schedules/${this.scheduleId}/entries`, payload);
-                createdEntries.push(resp.data.data);
+                bulkPayloads.push(payload)
               }
             } catch (err) {
               console.error('Error creating recurring entry:', err);
@@ -1865,8 +1903,27 @@ export default {
         }
       }
 
-      await this.fetchEntries();
-      this.addEntryDialogVisible = false;
+      this.addEntryProcessing = true
+      try {
+        if (tasks.length > 0) {
+          await Promise.all(tasks)
+        }
+        // If we collected bulk payloads for REST, send them in a single request
+        try {
+          if (bulkPayloads.length > 0) {
+            const resp = await api.post(`schedules/${this.scheduleId}/entries/bulk`, bulkPayloads)
+            if (resp && resp.data && Array.isArray(resp.data.data)) {
+              createdEntries.push(...resp.data.data)
+            }
+          }
+        } catch (e) {
+          console.error('Bulk create failed', e)
+        }
+        await this.fetchEntries();
+        this.addEntryDialogVisible = false;
+      } finally {
+        this.addEntryProcessing = false
+      }
       // If exactly one entry was created, open its detail dialog on small screens.
       if (createdEntries.length === 1 && this.$q.screen.lt.sm) {
         const first = createdEntries[0];
@@ -2275,6 +2332,14 @@ export default {
       }
       const selectedIds = this.selectedRows.map((r) => (r && r.id) ? r.id : r);
       const errors = [];
+      // initialize progress and collect updates
+      this.bulkProcessing = true
+      this.bulkProgressTotal = selectedIds.length
+      this.bulkProgressCount = 0
+
+      const restUpdates = [];
+      const orbitUpdates = [];
+
       for (const id of selectedIds) {
         const payload = {};
         if (this.bulkApply.name) payload.name = this.bulkForm.name;
@@ -2358,18 +2423,145 @@ export default {
         if (this.bulkApply.devotional) payload.devotional_ids = this.extractIds(this.bulkForm.devotional);
         if (this.bulkApply.cant_come) payload.cant_come_ids = this.extractIds(this.bulkForm.cant_come);
         if (this.bulkApply.public_event) payload.public_event = this.bulkForm.public_event;
+        // accumulate updates for Orbit or REST
+        if (USE_ORBIT) {
+          try { console.debug('saveBulkChanges: orbit update payload', { id, payload }) } catch (e) {}
+          orbitUpdates.push(Object.assign({ id }, payload));
+        } else {
+          try { console.debug('saveBulkChanges: REST accumulate payload', { id, payload }) } catch (e) {}
+          restUpdates.push(Object.assign({ id }, payload));
+        }
+      }
 
+      // Prefer using the REST bulk endpoint for bulk updates (even when using Orbit for realtime sync).
+      // This makes bulk edits fast and server-canonical while leaving Orbit active for other operations.
+      const PREFER_BULK_REST = true
+      if (PREFER_BULK_REST && orbitUpdates.length > 0) {
+        restUpdates.push(...orbitUpdates)
+        orbitUpdates.length = 0
+      }
+
+      // If REST bulk updates are present, send them in one request.
+      // If offline, enqueue a bulk transform into Orbit's pending queue and apply locally.
+      if (restUpdates.length > 0) {
         try {
-          if (USE_ORBIT) {
-            try { console.debug('saveBulkChanges: orbit update payload', { id, payload }) } catch (e) {}
-            await orbitSchedules.updateEntry(this.scheduleId, Object.assign({ id }, payload));
+          try { console.debug('saveBulkChanges: REST bulk payload size', restUpdates.length) } catch (e) {}
+          // Filter out client-local placeholder ids prior to sending to the server
+          const filteredRest = restUpdates.filter(u => !(typeof u.id === 'string' && u.id.startsWith('local-')))
+          try { console.debug('saveBulkChanges: filtered REST payload size', filteredRest.length) } catch (e) {}
+
+          const online = (typeof navigator !== 'undefined' ? navigator.onLine : true)
+          const orbitStatus = (orbitSchedules && typeof orbitSchedules.getSyncStatus === 'function') ? orbitSchedules.getSyncStatus() : { connected: false }
+          const wsConnected = !!(orbitStatus && orbitStatus.connected)
+
+          if (!online || !wsConnected) {
+            // Offline fallback: apply updates locally and enqueue a bulk transform
+            try {
+              // Build full row objects by merging current rows with update patches
+              const prepared = filteredRest.map(u => {
+                const id = u.id
+                const existing = (this.rows || []).find(r => String(r.id) === String(id)) || {}
+                return Object.assign({}, existing, {
+                  id: id,
+                  schedule_id: this.scheduleId,
+                  date: u.date !== undefined ? u.date : (existing.date || null),
+                  start: u.start !== undefined ? u.start : (existing.start || null),
+                  end: u.end !== undefined ? u.end : (existing.end || null),
+                  name: u.name !== undefined ? u.name : (existing.name || ''),
+                  description: u.description !== undefined ? u.description : (existing.description || ''),
+                  notes: u.notes !== undefined ? u.notes : (existing.notes || ''),
+                  public_event: u.public_event !== undefined ? u.public_event : !!existing.public_event,
+                  responsible_ids: u.responsible_ids !== undefined ? u.responsible_ids : (existing.responsible_ids || []),
+                  devotional_ids: u.devotional_ids !== undefined ? u.devotional_ids : (existing.devotional_ids || []),
+                  cant_come_ids: u.cant_come_ids !== undefined ? u.cant_come_ids : (existing.cant_come_ids || []),
+                })
+              })
+
+              // Persist locally and notify subscribers/UI. Sanitize rows to plain JSON first
+              try {
+                const sanitize = (arr) => {
+                  try {
+                    if (typeof structuredClone === 'function') return arr.map(a => structuredClone(a))
+                    return arr.map(a => JSON.parse(JSON.stringify(a)))
+                  } catch (e) {
+                    try { return arr.map(a => Object.assign({}, a)) } catch (ee) { return arr }
+                  }
+                }
+                const sanitizedPrepared = sanitize(prepared)
+                await orbitSchedules.setLocalEntries(this.scheduleId, sanitizedPrepared)
+                // replace prepared with sanitized version for the queued transform
+                prepared.length = 0
+                prepared.push(...sanitizedPrepared)
+              } catch (e) {
+                console.warn('saveBulkChanges: setLocalEntries failed', e)
+              }
+
+              // Enqueue a single bulk transform payload so it will be flushed on reconnect
+              try {
+                const payload = { type: 'transform', transform: { rows: { [this.scheduleId]: prepared } } }
+                // ensure payload is serializable before persisting
+                let safePayload = payload
+                try {
+                  if (typeof structuredClone === 'function') safePayload = structuredClone(payload)
+                  else safePayload = JSON.parse(JSON.stringify(payload))
+                } catch (e) {
+                  try { safePayload = JSON.parse(JSON.stringify(payload, (k,v)=> (typeof v === 'function' ? undefined : v))) } catch (ee) { /* fallthrough */ }
+                }
+                // sendTransform will persist to pending queue when offline
+                try {
+                  // Break the bulk rows payload into per-entry transforms so the
+                  // backend can persist create ops (it only persists op==='create').
+                  const msgs = prepared.map(entry => {
+                    const op = (entry && typeof entry.id === 'string' && entry.id.startsWith('local-')) ? 'create' : 'update'
+                    // ensure canonical id-arrays are present
+                    const ent = Object.assign({}, entry, {
+                      responsible_ids: Array.isArray(entry.responsible_ids) ? entry.responsible_ids : (Array.isArray(entry.responsible) ? entry.responsible : []),
+                      devotional_ids: Array.isArray(entry.devotional_ids) ? entry.devotional_ids : (Array.isArray(entry.devotional) ? entry.devotional : []),
+                      cant_come_ids: Array.isArray(entry.cant_come_ids) ? entry.cant_come_ids : (Array.isArray(entry.cant_come) ? entry.cant_come : []),
+                    })
+                    return { type: 'transform', transform: { op, scheduleId: this.scheduleId, entry: ent } }
+                  })
+
+                  // write synchronous fallback entries immediately to localStorage
+                  try {
+                    if (typeof localStorage !== 'undefined') {
+                      const raw = localStorage.getItem('orbit:pending_fallback')
+                      const arr = raw ? JSON.parse(raw) : []
+                      arr.push(...msgs)
+                      localStorage.setItem('orbit:pending_fallback', JSON.stringify(arr))
+                      console.debug('TermSchedules.saveBulkChanges: wrote immediate pending_fallback length', arr.length)
+                    }
+                  } catch (e) { console.warn('TermSchedules.saveBulkChanges: failed to write pending_fallback', e) }
+
+                  if (typeof orbitSchedules.sendTransform === 'function') {
+                    for (const m of msgs) {
+                      try { await orbitSchedules.sendTransform(m) } catch (e) { console.warn('saveBulkChanges: sendTransform failed for item', e) }
+                    }
+                  } else {
+                    // fallback: try to persist via pending queue apis
+                    try {
+                      const q = await (typeof orbitSchedules.getPendingQueue === 'function' ? orbitSchedules.getPendingQueue() : [])
+                      q.push(...msgs)
+                      if (typeof orbitSchedules.clearPending === 'function') await orbitSchedules.clearPending()
+                    } catch (e) { console.warn('saveBulkChanges: fallback pending persist failed', e) }
+                  }
+                } catch (e) { console.warn('saveBulkChanges: immediate fallback + sendTransform failed', e) }
+              } catch (e) { console.warn('saveBulkChanges: enqueue bulk transform failed', e) }
+
+              // consider the work done locally
+              this.bulkProgressCount = this.bulkProgressTotal
+            } catch (e) {
+              console.error('saveBulkChanges: offline bulk fallback failed', e)
+              errors.push({ id: null, error: e })
+            }
           } else {
-            try { console.debug('saveBulkChanges: REST PATCH payload', { id, payload }) } catch (e) {}
-            await api.patch(`entries/${id}`, payload);
+            // online + WS connected -> prefer REST bulk for canonical server update
+            const resp = await api.patch(`schedules/${this.scheduleId}/entries/bulk`, filteredRest)
+            this.bulkProgressCount = this.bulkProgressTotal
           }
         } catch (err) {
-          console.error('Bulk update failed for', id, err);
-          errors.push({ id, error: err });
+          console.error('Bulk REST update failed', err)
+          errors.push({ id: null, error: err })
         }
       }
 
@@ -2377,6 +2569,7 @@ export default {
       try { await this.fetchEntries() } catch (e) { console.warn('saveBulkChanges: refresh failed', e) }
       this.selectedIds = [];
       this.bulkDialogVisible = false;
+      this.bulkProcessing = false
       if (errors.length) {
         // show a simple alert for now
         alert(`Bulk update completed with ${errors.length} errors`);
