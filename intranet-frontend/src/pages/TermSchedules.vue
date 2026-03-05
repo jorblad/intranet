@@ -2653,6 +2653,32 @@ export default {
             // online + WS connected -> prefer REST bulk for canonical server update
             const resp = await api.patch(`schedules/${this.scheduleId}/entries/bulk`, filteredRest)
             this.bulkProgressCount = this.bulkProgressTotal
+            // If using Orbit local store, refresh it with authoritative server rows
+            try {
+              if (USE_ORBIT && resp && resp.data && Array.isArray(resp.data.data) && orbitSchedules && typeof orbitSchedules.setLocalEntries === 'function') {
+                const mapIdsToOptions = (ids) => {
+                  if (!Array.isArray(ids)) return [];
+                  return ids.map((id) => {
+                    const found = this.formattedUsers.find((u) => u.value === id);
+                    return found || { label: String(id), value: id };
+                  });
+                };
+                const serverRows = resp.data.data.map((entry) => ({
+                  id: entry.id,
+                  date: entry.date,
+                  start: entry.start || (entry.date ? `${entry.date}T00:00` : null),
+                  end: entry.end || (entry.date ? `${entry.date}T23:59` : null),
+                  name: entry.name,
+                  description: entry.description,
+                  responsible: mapIdsToOptions(entry.responsible_ids),
+                  devotional: mapIdsToOptions(entry.devotional_ids),
+                  cant_come: mapIdsToOptions(entry.cant_come_ids),
+                  notes: entry.notes,
+                  public_event: entry.public_event,
+                }))
+                try { await orbitSchedules.setLocalEntries(this.scheduleId, serverRows) } catch (e) { console.warn('saveBulkChanges: orbit setLocalEntries failed', e) }
+              }
+            } catch (e) { console.warn('saveBulkChanges: refresh orbit failed', e) }
           }
         } catch (err) {
           console.error('Bulk REST update failed', err)

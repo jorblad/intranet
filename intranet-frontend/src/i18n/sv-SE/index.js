@@ -145,6 +145,7 @@ export default {
     cancel: 'Avbryt',
     new_row: 'Ny rad',
     add_rows: 'Lägg till rader',
+    upcoming: 'kommande aktiviteter',
     responsible_label: 'Ansvarig',
     devotional_label: 'Andakt',
     cant_come_label: 'Kommer inte',
