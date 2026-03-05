@@ -1740,6 +1740,8 @@ export default {
                 responsible: mapIdsToOptions(entry.responsible_ids),
                 devotional: mapIdsToOptions(entry.devotional_ids),
                 cant_come: mapIdsToOptions(entry.cant_come_ids),
+                // include lastModified so Orbit merging treats server rows as authoritative
+                lastModified: entry.lastModified || entry.last_modified || Date.now(),
                 notes: entry.notes,
                 public_event: entry.public_event,
               }))
@@ -2545,6 +2547,35 @@ export default {
           const filteredRest = restUpdates.filter(u => !(typeof u.id === 'string' && u.id.startsWith('local-')))
           try { console.debug('saveBulkChanges: filtered REST payload size', filteredRest.length) } catch (e) {}
 
+          // Normalize assignment arrays to enforce cant_come rules before sending
+          const _normArr = (arr) => {
+            if (!Array.isArray(arr)) return []
+            return arr.map(x => (x && typeof x === 'object') ? (x.value || x.id || x.user_id || x) : x).filter(Boolean)
+          }
+          for (const u of filteredRest) {
+            try {
+              const existing = (this.rows || []).find(r => String(r.id) === String(u.id)) || {}
+              const existingCant = _normArr(existing.cant_come || existing.cant_come_ids || [])
+              const newCant = (u.cant_come_ids !== undefined) ? _normArr(u.cant_come_ids) : existingCant
+              const cantSet = new Set((newCant || []).map(String))
+
+              // Baseline responsible/devotional arrays: prefer explicit payload values,
+              // otherwise fall back to the currently stored values. Then always
+              // filter out any users present in the cant_come set so they are removed.
+              const baseResponsible = (u.responsible_ids !== undefined) ? _normArr(u.responsible_ids) : _normArr(existing.responsible || existing.responsible_ids || [])
+              const baseDevotional = (u.devotional_ids !== undefined) ? _normArr(u.devotional_ids) : _normArr(existing.devotional || existing.devotional_ids || [])
+
+              u.responsible_ids = baseResponsible.filter(id => !cantSet.has(String(id)))
+              u.devotional_ids = baseDevotional.filter(id => !cantSet.has(String(id)))
+
+              if (u.cant_come_ids !== undefined) {
+                u.cant_come_ids = newCant
+              }
+            } catch (e) {
+              /* tolerate normalization errors */
+            }
+          }
+
           const online = (typeof navigator !== 'undefined' ? navigator.onLine : true)
           const orbitStatus = (orbitSchedules && typeof orbitSchedules.getSyncStatus === 'function') ? orbitSchedules.getSyncStatus() : { connected: false }
           const wsConnected = !!(orbitStatus && orbitStatus.connected)
@@ -2571,6 +2602,23 @@ export default {
                   cant_come_ids: u.cant_come_ids !== undefined ? u.cant_come_ids : (existing.cant_come_ids || []),
                 })
               })
+
+              // Enforce cant_come rules on prepared entries:
+              const __normArr = (arr) => {
+                if (!Array.isArray(arr)) return []
+                return arr.map(x => (x && typeof x === 'object') ? (x.value || x.id || x.user_id || x) : x).filter(Boolean)
+              }
+              for (const p of prepared) {
+                try {
+                  p.cant_come_ids = __normArr(p.cant_come_ids || p.cant_come || [])
+                  const cantSet = new Set((p.cant_come_ids || []).map(String))
+                  p.responsible_ids = __normArr(p.responsible_ids || p.responsible || []).filter(id => !cantSet.has(String(id)))
+                  p.devotional_ids = __normArr(p.devotional_ids || p.devotional || []).filter(id => !cantSet.has(String(id)))
+                  // ensure prepared rows look newer than any local copy so they overwrite
+                  // during the setLocalEntries merge (use current ts)
+                  try { p.lastModified = Date.now() } catch (e) {}
+                } catch (e) {}
+              }
 
               // Persist locally and notify subscribers/UI. Sanitize rows to plain JSON first
               try {
@@ -2673,6 +2721,8 @@ export default {
                   responsible: mapIdsToOptions(entry.responsible_ids),
                   devotional: mapIdsToOptions(entry.devotional_ids),
                   cant_come: mapIdsToOptions(entry.cant_come_ids),
+                  // include lastModified so Orbit merging treats server rows as authoritative
+                  lastModified: entry.lastModified || entry.last_modified || Date.now(),
                   notes: entry.notes,
                   public_event: entry.public_event,
                 }))
