@@ -21,15 +21,35 @@ export default route(function (/* { store, ssrContext } */) {
 
   // Global route guard
   Router.beforeEach(async (to, from, next) => {
-    if (to.meta.requiresAuth && !isAuthenticated()) {
-      next('/login');
-      return
+    const requiresAuth = !!to.meta.requiresAuth
+
+    if (requiresAuth) {
+      const token = localStorage.getItem('access_token')
+      if (!token) {
+        next('/login')
+        return
+      }
+
+      try {
+        // Ensure the current user is valid; fetchCurrentUser will attempt
+        // token refresh if necessary via interceptors.
+        await fetchCurrentUser()
+        const auth = useAuth()
+        if (!auth.user) {
+          // no valid user -> treat as unauthenticated
+          next('/login')
+          return
+        }
+      } catch (err) {
+        try { localStorage.removeItem('access_token'); localStorage.removeItem('refresh_token') } catch (e) {}
+        next('/login')
+        return
+      }
     }
 
-    // If route requires admin, ensure current user is loaded and has admin rights
+    // If route requires admin, ensure loaded user has admin rights
     if (to.meta.requiresAdmin) {
       try {
-        await fetchCurrentUser()
         const auth = useAuth()
         const u = auth.user
         const isAdmin = !!(u && (u.attributes?.is_superadmin || (u.attributes?.assignments || []).some(a => a.role && a.role.name === 'org_admin')))

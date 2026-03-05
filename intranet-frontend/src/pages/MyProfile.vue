@@ -14,20 +14,45 @@
 
           <q-select v-model="language" :options="languageOptions" class="q-mt-sm" :label="t('profile.language')" emit-value map-options option-label="label" option-value="value" />
 
-          <div class="row q-mt-md">
-            <q-btn color="primary" :label="t('profile.save')" type="submit" />
-            <q-btn flat :label="t('profile.reset')" class="q-ml-sm" @click="resetForm" />
-          </div>
+
+
           <div class="q-mt-lg">
             <div class="text-subtitle2 q-mb-sm">{{ t('profile.calendar_links') }}</div>
+            <div class="row items-center q-col-gutter-sm q-mt-sm">
+              <div class="col">
+                <q-select
+                  v-model="selectedActivities"
+                  :options="formattedActivities"
+                  multiple
+                  use-chips
+                  emit-value
+                  map-options
+                  :label="t('profile.personal_calendar_activities')"
+                  :hint="t('profile.personal_calendar_activities_hint')"
+                  dense
+                />
+              </div>
+            </div>
             <div class="row items-center q-col-gutter-sm">
               <div class="col">
-                <q-input readonly dense :value="personalCalendarUrl" label="Personal calendar (shareable)" />
+                <q-input readonly dense :model-value="personalCalendarUrl" :label="t('profile.personal_calendar_label')" />
               </div>
               <div class="col-auto">
-                <q-btn flat icon="content_copy" @click="copyPersonalUrl" />
+                <q-btn flat icon="content_copy" @click="copyPersonalUrl" :disabled="!personalCalendarUrl" :title="t('profile.copy_personal_calendar')" />
                 <q-btn flat icon="refresh" @click="regenerateToken" :title="t('profile.regenerate_token')" />
               </div>
+            </div>
+            <div class="row items-center q-col-gutter-sm q-mt-sm">
+              <div class="col">
+                <q-input readonly dense :model-value="personalCalendarToken" :label="t('profile.calendar_id_label')" />
+              </div>
+              <div class="col-auto">
+                <q-btn flat icon="content_copy" @click="copyPersonalToken" :disabled="!personalCalendarToken" :title="t('profile.copy_calendar_id')" />
+              </div>
+            </div>
+            <div class="row q-mt-md">
+              <q-btn color="primary" :label="t('profile.save')" type="submit" />
+              <q-btn flat :label="t('profile.reset')" class="q-ml-sm" @click="resetForm" />
             </div>
           </div>
         </q-form>
@@ -56,6 +81,11 @@ const language = ref(null)
 const errors = ref({ username: '', displayName: '', password: '', passwordConfirm: '' })
 const formRef = ref(null)
 const personalCalendarUrl = ref2('')
+const personalCalendarToken = ref2('')
+const activities = ref([])
+const formattedActivities = ref([])
+const selectedActivities = ref([])
+const orgs = ref([])
 
 const languageOptions = [
   { label: 'English', value: 'en-US' },
@@ -92,6 +122,23 @@ function populateFromAuth() {
   }
 }
 
+// load persisted selected activities from auth.user if present
+function populateSelectedActivitiesFromAuth() {
+  const u = auth.user
+  if (!u) return
+  try {
+    const pca = u.attributes?.personal_calendar_activity_ids
+    if (Array.isArray(pca)) {
+      selectedActivities.value = pca
+    } else if (typeof pca === 'string') {
+      try {
+        const parsed = JSON.parse(pca)
+        if (Array.isArray(parsed)) selectedActivities.value = parsed
+      } catch (e) {}
+    }
+  } catch (e) {}
+}
+
 onMounted(() => {
   populateFromAuth()
   // ensure password inputs have native autocomplete attributes (some browsers
@@ -99,6 +146,9 @@ onMounted(() => {
   // so any rendered native inputs receive the attribute.
   ensurePasswordAutocomplete()
   updatePersonalUrl()
+  updatePersonalToken()
+  fetchActivities()
+  populateSelectedActivitiesFromAuth()
 })
 
 // when auth.user is populated/updated elsewhere (e.g. after fetchCurrentUser),
@@ -106,16 +156,71 @@ onMounted(() => {
 watch(() => auth.user, (v) => {
   if (v) populateFromAuth()
   updatePersonalUrl()
+  updatePersonalToken()
+  populateSelectedActivitiesFromAuth()
+})
+
+watch(selectedActivities, () => {
+  updatePersonalUrl()
 })
 
 function updatePersonalUrl() {
   const u = auth.user
   const token = u?.attributes?.calendar_token
   if (token) {
-    personalCalendarUrl.value = `${window.location.origin}/api/calendars/personal/${token}.ics`
+    let url = `${window.location.origin}/api/calendars/personal/${token}.ics`
+    // append selected activities as repeatable query params
+    try {
+      if (Array.isArray(selectedActivities.value) && selectedActivities.value.length > 0) {
+        const params = selectedActivities.value.map(a => `activity_id=${encodeURIComponent(String(a))}`).join('&')
+        url = `${url}?${params}`
+      }
+    } catch (e) {}
+    personalCalendarUrl.value = url
   } else {
     personalCalendarUrl.value = ''
   }
+}
+
+async function fetchActivities() {
+  try {
+    // Fetch activities and the organizations the user belongs to so we can
+    // show org names when the user has access to multiple orgs.
+    const [actsResp, orgsResp] = await Promise.all([
+      axios.get('/api/activities'),
+      axios.get('/api/rbac/organizations')
+    ])
+
+    activities.value = actsResp.data?.data || actsResp.data || []
+    orgs.value = orgsResp.data || []
+
+    // build org id -> name map
+    const orgMap = {}
+    orgs.value.forEach(o => { if (o && o.id) orgMap[String(o.id)] = o.name })
+
+    const multipleOrgs = (orgs.value && orgs.value.length > 1)
+
+    formattedActivities.value = activities.value.map(a => {
+      const name = a.attributes?.name || String(a.id)
+      const orgId = a.attributes?.organization_id
+      let label = name
+      if (multipleOrgs && orgId) {
+        const orgName = orgMap[String(orgId)] || String(orgId)
+        label = `${name} (${orgName})`
+      }
+      return { label, value: a.id }
+    })
+  } catch (e) {
+    console.warn('Failed to fetch activities for profile', e)
+  }
+}
+
+// expose the raw token separately so the user can copy/paste it if needed
+function updatePersonalToken() {
+  const u = auth.user
+  const token = u?.attributes?.calendar_token
+  if (token) personalCalendarToken.value = token
+  else personalCalendarToken.value = ''
 }
 
 async function regenerateToken() {
@@ -123,16 +228,57 @@ async function regenerateToken() {
     await axios.post('/api/user/me/calendar_token/regenerate')
     await fetchCurrentUser()
     updatePersonalUrl()
+    updatePersonalToken()
     $q.notify({ type: 'positive', message: t('profile.token_regenerated') })
   } catch (e) {
     $q.notify({ type: 'negative', message: t('failed') })
   }
 }
 
-function copyPersonalUrl() {
-  if (!personalCalendarUrl.value) return
-  navigator.clipboard.writeText(personalCalendarUrl.value)
-  $q.notify({ type: 'positive', message: t('profile.link_copied') })
+async function copyPersonalUrl() {
+  if (!personalCalendarUrl.value) {
+    $q.notify({ type: 'negative', message: 'No personal calendar URL available — regenerate token first.' })
+    return
+  }
+  try {
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+      await navigator.clipboard.writeText(personalCalendarUrl.value)
+    } else {
+      const ta = document.createElement('textarea')
+      ta.value = personalCalendarUrl.value
+      document.body.appendChild(ta)
+      ta.select()
+      document.execCommand('copy')
+      document.body.removeChild(ta)
+    }
+    $q.notify({ type: 'positive', message: t('profile.link_copied') })
+  } catch (e) {
+    console.error('Failed to copy personal calendar URL', e)
+    $q.notify({ type: 'negative', message: t('failed') })
+  }
+}
+
+async function copyPersonalToken() {
+  if (!personalCalendarToken.value) {
+    $q.notify({ type: 'negative', message: 'No personal calendar ID available — regenerate token first.' })
+    return
+  }
+  try {
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+      await navigator.clipboard.writeText(personalCalendarToken.value)
+    } else {
+      const ta = document.createElement('textarea')
+      ta.value = personalCalendarToken.value
+      document.body.appendChild(ta)
+      ta.select()
+      document.execCommand('copy')
+      document.body.removeChild(ta)
+    }
+    $q.notify({ type: 'positive', message: t('profile.link_copied') })
+  } catch (e) {
+    console.error('Failed to copy personal calendar ID', e)
+    $q.notify({ type: 'negative', message: t('failed') })
+  }
 }
 
 function resetForm() {
@@ -201,12 +347,18 @@ async function saveProfile() {
   if (displayName.value) payload.display_name = displayName.value.trim()
   if (password.value) payload.password = password.value
   if (language.value) payload.language = language.value
+  // include persisted personal calendar activity selection
+  try {
+    payload.personal_calendar_activity_ids = Array.isArray(selectedActivities.value) ? selectedActivities.value : []
+  } catch (e) {}
 
   try {
     const res = await axios.patch('/api/user/me', payload)
     await fetchCurrentUser()
     // refresh local form values from the updated auth state
     populateFromAuth()
+      populateSelectedActivitiesFromAuth()
+    updatePersonalUrl()
     // ensure native inputs have autocomplete set after re-render
     ensurePasswordAutocomplete()
     // update client language immediately

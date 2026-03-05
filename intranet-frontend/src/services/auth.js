@@ -56,6 +56,10 @@ export async function fetchCurrentUser() {
     } catch (e) {}
   } catch (err) {
     state.user = null
+    try {
+      localStorage.removeItem('access_token')
+      localStorage.removeItem('refresh_token')
+    } catch (e) {}
   }
 }
 

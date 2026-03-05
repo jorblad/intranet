@@ -94,6 +94,14 @@ export default {
     regenerate_token: 'Återställ token',
     token_regenerated: 'Token återställd',
     link_copied: 'Länk kopierad'
+    ,
+    personal_calendar_label: 'Personlig kalender (delbar)',
+    calendar_id_label: 'Kalender-ID',
+    copy_personal_calendar: 'Kopiera personlig kalenderlänk',
+    copy_calendar_id: 'Kopiera kalender-ID'
+    ,
+    personal_calendar_activities: 'Aktiviteter i den personliga kalendern',
+    personal_calendar_activities_hint: 'Välj aktiviteter att inkludera i den delbara personliga kalenderns URL (valfritt)'
   },
   orgs: {
     new_placeholder: 'Ny organisation',
@@ -150,6 +158,8 @@ export default {
     select_all_visible: 'Välj alla synliga',
     copy_activity_calendar: 'Kopiera aktivitetskalenderlänk',
     activity_link_copied: 'Aktivitetskalenderlänk kopierad',
+    copy_public_calendar: 'Kopiera publik kalenderlänk',
+    public_link_copied: 'Publik kalenderlänk kopierad',
     term: 'Termin',
     activity: 'Aktivitet',
     details: 'Detaljer',
@@ -166,6 +176,9 @@ export default {
     apply_time_only: 'Endast tid',
     start_label: 'Start',
     end_label: 'Slut'
+    ,
+    activity_calendar_url: 'Publik aktivitetskalenderlänk',
+    public_calendar_url: 'Publik kalenderlänk'
   }
   ,
   termschedules_extras: {

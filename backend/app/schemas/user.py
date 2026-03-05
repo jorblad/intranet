@@ -23,6 +23,7 @@ class UserSelfUpdate(BaseModel):
     display_name: str | None = None
     password: str | None = None
     language: str | None = None
+    personal_calendar_activity_ids: list[str] | None = None
 
 
 class UserOut(UserBase):

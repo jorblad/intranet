@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from app.core.security import get_password_hash
 import uuid
 from app.models import User
+import json
 
 
 def get_user_by_username(db: Session, username: str) -> User | None:
@@ -40,6 +41,7 @@ def update_user(
     is_active: bool | None,
     username: str | None = None,
     language: str | None = None,
+    personal_calendar_activity_ids: list[str] | None = None,
 ) -> User:
     # allow username change if provided and not taken
     if username is not None and username != user.username:
@@ -57,6 +59,18 @@ def update_user(
         user.hashed_password = get_password_hash(password)
     if is_active is not None:
         user.is_active = is_active
+    # persist selected activity ids as JSON string (or clear if None/empty)
+    if personal_calendar_activity_ids is not None:
+        try:
+            if isinstance(personal_calendar_activity_ids, list):
+                user.personal_calendar_activity_ids = json.dumps(personal_calendar_activity_ids)
+            elif isinstance(personal_calendar_activity_ids, str):
+                # allow passing raw JSON string
+                user.personal_calendar_activity_ids = personal_calendar_activity_ids
+            else:
+                user.personal_calendar_activity_ids = None
+        except Exception:
+            user.personal_calendar_activity_ids = None
     db.commit()
     db.refresh(user)
     return user

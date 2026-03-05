@@ -76,6 +76,16 @@ def users_me(db: Session = Depends(get_db), _user=Depends(get_current_user)):
 
     is_super = any((a.role and a.role.name == "superadmin" and a.role.is_global) for a in getattr(_user, "organization_roles", []) or [])
 
+    # attempt to decode stored JSON activity ids
+    import json
+    pca = None
+    try:
+        raw = getattr(_user, 'personal_calendar_activity_ids', None)
+        if raw:
+            pca = json.loads(raw)
+    except Exception:
+        pca = None
+
     return {
         "data": {
             "id": _user.id,
@@ -86,6 +96,7 @@ def users_me(db: Session = Depends(get_db), _user=Depends(get_current_user)):
                 "calendar_token": getattr(_user, 'calendar_token', None),
                 "is_superadmin": is_super,
                 "language": getattr(_user, 'language', None),
+                "personal_calendar_activity_ids": pca,
                 "assignments": assignments,
             },
         }
@@ -175,11 +186,30 @@ def users_update_me(
 ):
     # allow the current user to update their own profile (username, display_name, password)
     try:
-        user = update_user(db, _user, payload.display_name, payload.password, None, payload.username, payload.language)
+        user = update_user(
+            db,
+            _user,
+            payload.display_name,
+            payload.password,
+            None,
+            payload.username,
+            payload.language,
+            personal_calendar_activity_ids=payload.personal_calendar_activity_ids,
+        )
     except ValueError as e:
         if str(e) == "username_taken":
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Username already taken")
         raise
+
+    # decode stored personal_calendar_activity_ids for response
+    import json
+    pca_out = None
+    try:
+        raw = getattr(user, 'personal_calendar_activity_ids', None)
+        if raw:
+            pca_out = json.loads(raw)
+    except Exception:
+        pca_out = None
 
     return {
         "data": {
@@ -190,6 +220,7 @@ def users_update_me(
                 "display_name": user.display_name,
                 "is_active": user.is_active,
                 "calendar_token": getattr(user, 'calendar_token', None),
+                "personal_calendar_activity_ids": pca_out,
             },
         }
     }

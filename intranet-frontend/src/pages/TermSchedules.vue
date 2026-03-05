@@ -2,7 +2,7 @@
 <template>
   <q-page>
     <div class="row no-wrap">
-      <q-toolbar inset class="bg-primary text-white q-my-md shadow-2 q-gutter-xs">
+      <q-toolbar inset class="bg-primary text-white q-mt-md q-mb-none shadow-2 q-gutter-xs">
 
         <!-- Toolbar title -->
         <q-toolbar-title>{{$t('termschedules.title')}}</q-toolbar-title>
@@ -54,8 +54,27 @@
                     new-value-mode="add-unique"
                     @new-value="handleActivityNew"
                 />
-                <q-btn flat dense round icon="link" size="sm" class="q-ml-sm" v-if="activity" @click="copyActivityPublicLink" :title="$t('termschedules.copy_activity_calendar')" />
-                <q-btn flat dense round icon="public" size="sm" class="q-ml-sm" @click="copyPublicCalendarLink" :title="$t('termschedules.copy_public_calendar')" />
+                <div class="mobile-copy-buttons q-mt-sm">
+                  <q-btn
+                    block
+                    color="primary"
+                    icon="content_copy"
+                    v-if="activity"
+                    @click="copyActivityPublicLink"
+                    :label="$t('termschedules.copy_activity_calendar')"
+                    :disabled="!activityCalendarUrl"
+                  />
+                  <q-btn
+                    block
+                    flat
+                    color="secondary"
+                    icon="public"
+                    class="q-mt-sm"
+                    @click="copyPublicCalendarLink"
+                    :label="$t('termschedules.copy_public_calendar')"
+                    :disabled="!publicCalendarUrl"
+                  />
+                </div>
               </q-item-section>
             </q-item>
 
@@ -70,8 +89,6 @@
                 color="primary"
                 @click="addRow"
               ></q-btn>
-              <q-btn flat dense round icon="link" size="sm" class="q-ml-sm" v-if="activity" @click="copyActivityPublicLink" :title="$t('termschedules.copy_activity_calendar')" />
-              <q-btn flat dense round icon="public" size="sm" class="q-ml-sm" @click="copyPublicCalendarLink" :title="$t('termschedules.copy_public_calendar')" />
               </q-item-section>
             </q-item>
           </q-list>
@@ -132,8 +149,66 @@
 
           </q-item>
 
+          <!-- URL inputs moved below toolbar on wide screens to use full width -->
+
         </div>
         </q-toolbar>
+    </div>
+
+    <!-- Full-width calendar URL row so links can use all available space -->
+    <div v-if="!$q.screen.lt.sm" class="calendar-url-full-row bg-primary text-white q-pa-sm">
+      <div class="row items-center no-wrap">
+        <div class="col">
+          <div class="row items-center no-wrap">
+            <div class="col calendar-url-col calendar-url-activity">
+              <q-input
+                readonly
+                dense
+                dark
+                :model-value="activityCalendarUrl"
+                :label="$t('termschedules.activity_calendar_url')"
+                input-class="calendar-url-input"
+              />
+            </div>
+            <div class="col-auto">
+              <q-btn
+                flat
+                dense
+                round
+                icon="content_copy"
+                :disabled="!activityCalendarUrl"
+                @click="copyActivityPublicLink"
+                :title="$t('termschedules.copy_activity_calendar')"
+              />
+            </div>
+          </div>
+        </div>
+        <div class="col">
+          <div class="row items-center no-wrap">
+            <div class="col calendar-url-col calendar-url-public">
+              <q-input
+                readonly
+                dense
+                dark
+                :model-value="publicCalendarUrl"
+                :label="$t('termschedules.public_calendar_url')"
+                input-class="calendar-url-input"
+              />
+            </div>
+            <div class="col-auto">
+              <q-btn
+                flat
+                dense
+                round
+                icon="content_copy"
+                @click="copyPublicCalendarLink"
+                :title="$t('termschedules.copy_public_calendar')"
+                :disabled="!publicCalendarUrl"
+              />
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <div class="q-pa-md">
@@ -725,13 +800,6 @@ td.sticky-col
   display: flex
   flex-direction: column
   gap: 4px
-
-  .q-input,
-  .q-select,
-  .q-toggle
-    margin-top: 4px
-    margin-bottom: 8px
-
 @media (min-width: 600px)
   .bulk-pair
     display: flex
@@ -746,11 +814,20 @@ td.sticky-col
     .col-sm-8
       flex: 1 1 auto
 
-    .q-input,
-    .q-select,
-    .q-toggle
-      margin-top: 0
-      margin-bottom: 0
+/* Allow long calendar URLs to be scrolled inside the input */
+.calendar-url-col
+  min-width: 0
+
+.calendar-url-input
+  white-space: nowrap
+  overflow-x: auto
+  -webkit-overflow-scrolling: touch
+
+@media (min-width: 600px)
+  .calendar-url-activity
+    flex: 9 1 90%
+  .calendar-url-public
+    flex: 1 1 10%
 </style>
 
 <script>
@@ -1486,22 +1563,40 @@ export default {
         console.error('Error fetching activities:', error);
       }
     },
-    copyActivityPublicLink() {
+    async copyActivityPublicLink() {
       try {
-        const aid = this.normalizeToId(this.activity)
-        if (!aid) return
-        const url = `${window.location.origin}/api/calendars/activity/${aid}.ics`
-        navigator.clipboard.writeText(url)
+        const url = this.activityCalendarUrl
+        if (!url) return
+        if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+          await navigator.clipboard.writeText(url)
+        } else {
+          const ta = document.createElement('textarea')
+          ta.value = url
+          document.body.appendChild(ta)
+          ta.select()
+          document.execCommand('copy')
+          document.body.removeChild(ta)
+        }
         this.$q.notify({ type: 'positive', message: this.$t('termschedules.activity_link_copied') })
       } catch (e) {
         console.error('Failed to copy activity link', e)
         this.$q.notify({ type: 'negative', message: this.$t('failed') })
       }
     },
-    copyPublicCalendarLink() {
+    async copyPublicCalendarLink() {
       try {
-        const url = `${window.location.origin}/api/calendars/public.ics`
-        navigator.clipboard.writeText(url)
+        const url = this.publicCalendarUrl
+        if (!url) return
+        if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+          await navigator.clipboard.writeText(url)
+        } else {
+          const ta = document.createElement('textarea')
+          ta.value = url
+          document.body.appendChild(ta)
+          ta.select()
+          document.execCommand('copy')
+          document.body.removeChild(ta)
+        }
         this.$q.notify({ type: 'positive', message: this.$t('termschedules.public_link_copied') })
       } catch (e) {
         console.error('Failed to copy public calendar link', e)
@@ -2601,6 +2696,20 @@ export default {
           value: user.id,
           name: user.attributes.display_name,
         }));
+    },
+
+    activityCalendarUrl() {
+      try {
+        const origin = (typeof window !== 'undefined' && window.location && window.location.origin) ? window.location.origin : ''
+        const id = this.normalizeToId(this.activity)
+        return id ? `${origin}/api/calendars/activity/${id}.ics` : ''
+      } catch (e) { return '' }
+    },
+    publicCalendarUrl() {
+      try {
+        const origin = (typeof window !== 'undefined' && window.location && window.location.origin) ? window.location.origin : ''
+        return `${origin}/api/calendars/public.ics`
+      } catch (e) { return '' }
     },
 
     selectedRows() {

@@ -36,7 +36,14 @@ export function setupInterceptors({ refreshEndpoint = '/oauth/token' } = {}) {
         originalRequest._retry = true
         const refreshToken = localStorage.getItem('refresh_token')
         if (!refreshToken) {
-          // no refresh available
+          // no refresh available: clear any tokens and redirect to login
+          try {
+            localStorage.removeItem('access_token')
+            localStorage.removeItem('refresh_token')
+          } catch (e) {}
+          if (typeof window !== 'undefined') {
+            window.location.href = '/login'
+          }
           return Promise.reject(error)
         }
 
@@ -55,9 +62,14 @@ export function setupInterceptors({ refreshEndpoint = '/oauth/token' } = {}) {
             onRefreshed(data.access_token)
             return data
           }).catch(err => {
-            // refresh failed: clear tokens
-            localStorage.removeItem('access_token')
-            localStorage.removeItem('refresh_token')
+            // refresh failed: clear tokens and redirect to login
+            try {
+              localStorage.removeItem('access_token')
+              localStorage.removeItem('refresh_token')
+            } catch (e) {}
+            if (typeof window !== 'undefined') {
+              window.location.href = '/login'
+            }
             throw err
           }).finally(() => {
             isRefreshing = false

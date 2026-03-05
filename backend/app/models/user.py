@@ -17,6 +17,8 @@ class User(Base):
     language = Column(String, nullable=True)
     # persistent token for shareable personal calendar links
     calendar_token = Column(String, unique=True, index=True, nullable=True)
+    # JSON-encoded list of activity ids the user prefers for their personal calendar URL
+    personal_calendar_activity_ids = Column(String, nullable=True)
 
     refresh_tokens = relationship("RefreshToken", back_populates="user")
     organization_roles = relationship("UserOrganizationRole", back_populates="user")

@@ -93,6 +93,14 @@ export default {
     regenerate_token: 'Regenerate token',
     token_regenerated: 'Token regenerated',
     link_copied: 'Link copied'
+    ,
+    personal_calendar_label: 'Personal calendar (shareable)',
+    calendar_id_label: 'Calendar ID',
+    copy_personal_calendar: 'Copy personal calendar link',
+    copy_calendar_id: 'Copy calendar ID'
+    ,
+    personal_calendar_activities: 'Activities included in personal calendar',
+    personal_calendar_activities_hint: 'Select activities to include in the shareable personal calendar URL (optional)'
   },
   orgs: {
     new_placeholder: 'New organization',
@@ -151,11 +159,15 @@ export default {
     end_date_label: 'End date (inclusive)',
     frequency_label: 'Frequency',
     weekdays_label: 'Weekdays'
+    ,
+    activity_calendar_url: 'Activity public calendar URL',
+    public_calendar_url: 'Public calendar URL'
   ,
   termschedules_extras: {
     copy_activity_calendar: 'Copy activity calendar link',
-    activity_link_copied: 'Activity calendar link copied'
-    ,
+    activity_link_copied: 'Activity calendar link copied',
+    activity_calendar_url: 'Activity public calendar URL',
+    public_calendar_url: 'Public calendar URL',
     copy_public_calendar: 'Copy public calendar link',
     public_link_copied: 'Public calendar link copied'
   }
