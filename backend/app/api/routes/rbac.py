@@ -254,6 +254,11 @@ def role_apply_program_preset(role_id: str, payload: ApplyProgramPreset, db: Ses
 
     # choose the resource_type to operate on (default to 'activity')
     rtype = (payload.resource_type or 'activity')
+    # Normalize legacy/type aliases: historically the UI used 'program' as the
+    # resource_type name while newer flows use 'activity'. To remain
+    # compatible with existing DB rows and tests, store resource rows under
+    # 'program' while still accepting 'activity' as input.
+    store_rtype = 'program' if rtype in ('activity', 'program') else rtype
     preset = (payload.preset or '').lower()
 
     # build codenames based on resource type
@@ -285,26 +290,28 @@ def role_apply_program_preset(role_id: str, payload: ApplyProgramPreset, db: Ses
         extra = db.query(Permission).filter(Permission.codename.like(likepat)).all()
         permission_ids = list({p.id for p in extra})
 
-    # apply as default first (resource_id = None)
-    set_permissions_for_role_resource(db, role, permission_ids, rtype, None)
+    # apply as default first (resource_id = None). Use `store_rtype` for the
+    # persisted resource_type so legacy tests and DB rows that expect
+    # 'program' continue to work while callers may provide 'activity'.
+    set_permissions_for_role_resource(db, role, permission_ids, store_rtype, None)
 
     # apply to specific resource ids if provided (frontend sends resource_ids)
     # accept multiple possible payload fields for resource ids
     ids = payload.resource_ids or payload.activity_ids or []
     if ids:
         for rid in ids:
-            set_permissions_for_role_resource(db, role, permission_ids, rtype, rid)
+            set_permissions_for_role_resource(db, role, permission_ids, store_rtype, rid)
 
     # optionally apply to all existing resources of this type
     if payload.apply_to_existing:
         if rtype == 'activity':
             acts = list_activities(db)
             for a in acts:
-                set_permissions_for_role_resource(db, role, permission_ids, rtype, a.id)
+                set_permissions_for_role_resource(db, role, permission_ids, store_rtype, a.id)
         elif rtype == 'schedule':
             scheds = list_schedules(db)
             for s in scheds:
-                set_permissions_for_role_resource(db, role, permission_ids, rtype, s.id)
+                set_permissions_for_role_resource(db, role, permission_ids, store_rtype, s.id)
         else:
             # Unknown resource type: no-op
             pass
