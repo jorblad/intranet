@@ -18,6 +18,44 @@ export default boot(({ app }) => {
   // Set i18n instance on app
   app.use(i18n)
 
+  // Dynamically load and apply Quasar language pack to match vue-i18n locale
+  const applyQuasarLang = async (loc) => {
+    try {
+      const code = String(loc || i18n.global.locale.value || 'en-US')
+      let mod
+      if (/^sv/i.test(code)) {
+        mod = await import('quasar/lang/sv')
+      } else {
+        // default to en-US
+        mod = await import('quasar/lang/en-US')
+      }
+      const quasarLang = mod && (mod.default || mod)
+      try {
+        const $q = app.config && app.config.globalProperties && app.config.globalProperties.$q
+        if ($q && $q.lang && typeof $q.lang.set === 'function') {
+          $q.lang.set(quasarLang)
+        } else if ($q && $q.lang) {
+          $q.lang = quasarLang
+        } else {
+          // fallback: register Quasar with lang option
+          const { Quasar } = await import('quasar')
+          app.use(Quasar, { lang: quasarLang })
+        }
+      } catch (e) {
+        // ignore failures setting Quasar lang
+      }
+    } catch (e) {
+      // ignore dynamic import failures
+    }
+  }
+
+  // watch i18n locale and apply corresponding Quasar lang
+  try {
+    watch(() => i18n.global.locale.value, (v) => { applyQuasarLang(v) }, { immediate: true })
+  } catch (e) {
+    // ignore if watch can't be registered
+  }
+
   // Sync i18n locale with the auth.selectedLanguage so changes
   // to the user's language propagate immediately across the app.
   try {

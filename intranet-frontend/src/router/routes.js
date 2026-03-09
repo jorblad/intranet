@@ -59,6 +59,14 @@ const routes = [
     meta: { requiresAuth: true, requiresAdmin: true }
   },
   {
+    path: '/admin/messages',
+    component: () => import('layouts/MainLayout.vue'),
+    children: [
+      { path: '', component: () => import('pages/AdminMessages.vue'), name: 'admin-messages' }
+    ],
+    meta: { requiresAuth: true, requiresAdmin: true }
+  },
+  {
     path: '/schedules',
     component: () => import('layouts/MainLayout.vue'),
     children: [

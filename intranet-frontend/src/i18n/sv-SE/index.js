@@ -199,6 +199,40 @@ export default {
     save: 'Spara',
     create: 'Skapa'
   },
+  adminMessages: {
+    title: 'Adminmeddelanden',
+    newMessage: 'Nytt meddelande',
+    noActiveMessages: '(inga aktiva meddelanden)',
+    newAdminMessage: 'Nytt administratörsmeddelande',
+    editMessage: 'Redigera meddelande',
+    choose_icon: 'Välj ikon',
+    search_icons: 'Sök ikoner',
+    title_label: 'Rubrik',
+    body_label: 'Innehåll',
+    start_optional: 'Start (valfritt)',
+    end_optional: 'Slut (valfritt)',
+    leave_empty_hint: 'Lämna tomt för att behålla meddelandet tills det tas bort manuellt.',
+    priority_label: 'Prioritet',
+    organization_label: 'Organisation',
+    delete_confirm: 'Radera detta meddelande?',
+    title_required: 'Rubrik krävs',
+    select_organization_required: 'Vänligen välj en organisation',
+    created: 'Meddelande skapat',
+    updated: 'Meddelande uppdaterat',
+    create_failed: 'Misslyckades med att skapa meddelandet',
+    update_failed: 'Misslyckades med att uppdatera meddelandet',
+    permission_global_required: 'Endast globala administratörer kan ange ett globalt meddelande',
+    permission_modify_global: 'Du har inte behörighet att ändra globala meddelanden',
+    range: {
+      always: 'Alltid',
+      from: 'Från {date}',
+      until: 'Till {date}'
+    }
+  },
+  dateTimePicker: {
+    label: 'Datum och tid',
+    set: 'Ange'
+  },
   admin: {
     roles: {
       new_role_name: 'Nytt rollnamn',

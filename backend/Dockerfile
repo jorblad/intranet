@@ -1,9 +1,20 @@
 FROM python:3.14-slim
 
+ENV DEBIAN_FRONTEND=noninteractive
+
 WORKDIR /app
 
 COPY requirements.txt .
-RUN python -m pip install --upgrade pip && pip install -r requirements.txt
+# Install system build dependencies required to compile native wheels (libvalkey, cryptography)
+RUN apt-get update \
+	&& apt-get install -y --no-install-recommends \
+		build-essential \
+		libssl-dev \
+		libffi-dev \
+		pkg-config \
+	&& rm -rf /var/lib/apt/lists/* \
+	&& python -m pip install --upgrade pip \
+	&& pip install -r requirements.txt
 
 COPY app ./app
 COPY alembic.ini .

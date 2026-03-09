@@ -17,8 +17,12 @@
     <script>
       // Dev helper: use docker-compose API proxy target when available in browser
       // Default maps to host port 8200 -> container 8000 in docker-compose.dev.yml
+      // Avoid forcing this when running the local dev server (port 9000) so Vite proxy works.
       try {
-        if (!window.__API_PROXY_TARGET__) window.__API_PROXY_TARGET__ = 'http://localhost:8200'
+        const devPort = (typeof location !== 'undefined' && location && location.port) ? String(location.port) : ''
+        if (!window.__API_PROXY_TARGET__ && devPort !== '9000') {
+          window.__API_PROXY_TARGET__ = 'http://localhost:8200'
+        }
       } catch (e) {}
     </script>
   </head>

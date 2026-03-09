@@ -182,6 +182,40 @@ export default {
     save: 'Save',
     create: 'Create'
   },
+  adminMessages: {
+    title: 'Admin Messages',
+    newMessage: 'New Message',
+    noActiveMessages: '(no active messages)',
+    newAdminMessage: 'New Admin Message',
+    editMessage: 'Edit Message',
+    choose_icon: 'Choose icon',
+    search_icons: 'Search icons',
+    title_label: 'Title',
+    body_label: 'Body',
+    start_optional: 'Start (optional)',
+    end_optional: 'End (optional)',
+    leave_empty_hint: 'Leave empty to keep the message active until manually removed.',
+    priority_label: 'Priority',
+    organization_label: 'Organization',
+    delete_confirm: 'Delete this message?',
+    title_required: 'Title is required',
+    select_organization_required: 'Please select an organization',
+    created: 'Message created',
+    updated: 'Message updated',
+    create_failed: 'Failed to create message',
+    update_failed: 'Failed to update message',
+    permission_global_required: 'Only global admins can set a message as global',
+    permission_modify_global: 'You are not allowed to modify global messages',
+    range: {
+      always: 'Always',
+      from: 'From {date}',
+      until: 'Until {date}'
+    }
+  },
+  dateTimePicker: {
+    label: 'Date & time',
+    set: 'Set'
+  },
   admin: {
     roles: {
       new_role_name: 'New role name',

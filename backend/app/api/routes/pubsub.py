@@ -300,18 +300,24 @@ class PubSub:
                     # for the valkey echo. The forwarder will ignore valkey-echoed
                     # messages originating from this pid to avoid duplicates.
                     logger.info("PubSub: valkey publish succeeded; calling local handlers")
-                    # if the published message is an envelope with an inner payload,
-                    # unwrap it before calling local handlers so the local forwarder
-                    # (which ignores messages originating from this pid) will still
-                    # forward the inner payload to connected websockets.
+                    # If the published message is an envelope with an inner payload,
+                    # call local handlers with the inner payload (not the envelope)
+                    # so in-process websocket clients receive the useful payload
+                    # immediately. Remote processes will still receive the full
+                    # envelope from valkey and will forward the payload as usual.
                     try:
-                        # Call local handlers with the full envelope so local
-                        # forwarders can inspect `__origin_pid` and avoid echoing
-                        # messages back to the originating process. Unwrapping the
-                        # envelope here prevents that check and can cause loops.
-                        await self._call_handlers(message)
+                        parsed = None
+                        try:
+                            parsed = json.loads(message)
+                        except Exception:
+                            parsed = None
+                        if isinstance(parsed, dict) and parsed.get('__origin_pid') is not None and 'payload' in parsed:
+                            payload_text = json.dumps(parsed.get('payload'))
+                            await self._call_handlers(payload_text)
+                        else:
+                            await self._call_handlers(message)
                     except Exception:
-                        # fallback to calling handlers with raw message
+                        # best-effort: fall back to delivering the raw message
                         await self._call_handlers(message)
                     return
                 # try common alternative
@@ -321,10 +327,16 @@ class PubSub:
                         await maybe
                     logger.info("PubSub: valkey put succeeded; calling local handlers")
                     try:
-                        # See note above: prefer delivering the full envelope to
-                        # local handlers so they can ignore messages originating
-                        # from this pid and avoid duplicate local delivery.
-                        await self._call_handlers(message)
+                        parsed = None
+                        try:
+                            parsed = json.loads(message)
+                        except Exception:
+                            parsed = None
+                        if isinstance(parsed, dict) and parsed.get('__origin_pid') is not None and 'payload' in parsed:
+                            payload_text = json.dumps(parsed.get('payload'))
+                            await self._call_handlers(payload_text)
+                        else:
+                            await self._call_handlers(message)
                     except Exception:
                         await self._call_handlers(message)
                     return
@@ -338,11 +350,19 @@ class PubSub:
         # receives the inner payload (important when valkey isn't available).
         logger.info("PubSub: publishing via local handlers (count=%d)", len(self._handlers))
         try:
-            # Deliver the full envelope to local handlers so that handlers
-            # (like the websocket forwarder) can detect `__origin_pid` and
-            # avoid echoing messages back to the origin process. Unwrapping
-            # here removes that signal and may cause loops.
-            await self._call_handlers(message)
+            # When valkey isn't available we still want local websocket
+            # clients to receive the actionable payload. If the message is
+            # an envelope, deliver the inner payload locally; otherwise
+            # deliver the raw message.
+            parsed = None
+            try:
+                parsed = json.loads(message)
+            except Exception:
+                parsed = None
+            if isinstance(parsed, dict) and parsed.get('__origin_pid') is not None and 'payload' in parsed:
+                await self._call_handlers(json.dumps(parsed.get('payload')))
+            else:
+                await self._call_handlers(message)
         except Exception:
             # fallback to raw message if anything goes wrong
             await self._call_handlers(message)

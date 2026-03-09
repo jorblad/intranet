@@ -130,6 +130,16 @@
             </q-item-section>
           </q-item>
         </router-link>
+        <router-link v-if="isAdminVisible" :to="{ name: 'admin-messages' }" class="custom-router-link">
+          <q-item clickable v-ripple>
+            <q-item-section avatar>
+              <q-icon name='announcement' />
+            </q-item-section>
+            <q-item-section>
+              <q-item-label>Messages</q-item-label>
+            </q-item-section>
+          </q-item>
+        </router-link>
         <router-link v-if="isAdminVisible" :to="{ name: 'admin-roles' }" class="custom-router-link">
           <q-item clickable v-ripple>
             <q-item-section avatar>
@@ -191,6 +201,7 @@
     </q-drawer>
 
     <q-page-container>
+      <AdminBanners :organizationId="selectedOrg" />
       <router-view />
     </q-page-container>
   </q-layout>
@@ -211,10 +222,12 @@ import { useQuasar } from 'quasar'
 import { useAuth, fetchCurrentUser, fetchOrganizations, setSelectedOrganization } from '../services/auth.js'
 import { useI18n } from 'vue-i18n'
 import orbitSchedules from 'src/services/orbitSchedules.js'
+import AdminBanners from 'src/components/AdminBanners.vue'
 
 
 
 export default defineComponent({
+  components: { AdminBanners },
   name: 'MainLayout',
 
     setup () {
