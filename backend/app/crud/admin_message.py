@@ -7,12 +7,14 @@ from app.models import AdminMessage
 
 def create_admin_message(db: Session, title: str, body: str | None = None, organization_id: str | None = None,
                          start: datetime | None = None, end: datetime | None = None, created_by: str | None = None,
-                         priority: int = 0, icon: str | None = None, title_i18n: dict | None = None, body_i18n: dict | None = None) -> AdminMessage:
+                         priority: int = 0, icon: str | None = None, title_i18n: dict | None = None, body_i18n: dict | None = None,
+                         placement: str | None = 'banner') -> AdminMessage:
     msg = AdminMessage(
         title=title,
         body=body,
         title_i18n=title_i18n,
         body_i18n=body_i18n,
+        placement=placement,
         organization_id=organization_id,
         start=start,
         end=end,
@@ -30,7 +32,7 @@ def get_admin_message(db: Session, msg_id: str):
     return db.query(AdminMessage).filter(AdminMessage.id == msg_id).first()
 
 
-def list_admin_messages_for_org(db: Session, organization_id: str | None = None, active_only: bool = True):
+def list_admin_messages_for_org(db: Session, organization_id: str | None = None, active_only: bool = True, placement: str | None = None):
     # Now timestamp for active filtering
     now = datetime.now(timezone.utc)
     q = db.query(AdminMessage)
@@ -40,6 +42,9 @@ def list_admin_messages_for_org(db: Session, organization_id: str | None = None,
     else:
         # include org-specific and global messages
         q = q.filter(or_(AdminMessage.organization_id == organization_id, AdminMessage.organization_id == None))
+
+    if placement is not None:
+        q = q.filter(AdminMessage.placement == placement)
 
     if active_only:
         q = q.filter(and_(

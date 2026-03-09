@@ -10,11 +10,12 @@ function apiBase() {
   return '/api'
 }
 
-export async function fetchAdminMessages(organizationId = null) {
+export async function fetchAdminMessages(organizationId = null, placement = undefined) {
   const params = {}
   // only include organization_id when a non-null id is provided; do not send
   // the literal string 'null' which FastAPI would interpret as a real id
   if (organizationId !== undefined && organizationId !== null) params.organization_id = organizationId
+  if (placement !== undefined && placement !== null) params.placement = placement
   params.active = true
   const res = await axios.get(`${apiBase()}/admin/messages`, { params })
   return res.data || []

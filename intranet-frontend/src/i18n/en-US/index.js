@@ -74,7 +74,8 @@ export default {
     roles: 'Roles',
     permissions: 'Permissions',
     orgs: 'Organizations',
-    logout: 'Log out'
+    logout: 'Log out',
+    messages: 'Messages',
   },
   profile: {
     title: 'My profile',
@@ -179,6 +180,8 @@ export default {
     edit: 'Edit',
     delete: 'Delete',
     cancel: 'Cancel',
+    readMore: 'Read more',
+    readLess: 'Read less',
     save: 'Save',
     create: 'Create'
   },
@@ -196,6 +199,12 @@ export default {
     end_optional: 'End (optional)',
     leave_empty_hint: 'Leave empty to keep the message active until manually removed.',
     priority_label: 'Priority',
+    priority_help: 'Higher number = higher priority (shown first). Messages with the same priority are ordered by start time.',
+    placement_label: 'Placement',
+    placement_frontpage: 'Front page',
+    placement_banner: 'Banner',
+    preview: 'Preview',
+    banner_limit_note: 'Banners support only limited markdown; advanced styling and raw HTML will be stripped.',
     organization_label: 'Organization',
     delete_confirm: 'Delete this message?',
     title_required: 'Title is required',

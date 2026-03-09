@@ -33,6 +33,10 @@
                   <span style="display:inline-block; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; max-width:220px;">{{ getOrgLabel(m.organization_id) }}</span>
                   <q-tooltip anchor="bottom middle">{{ getOrgLabel(m.organization_id) }}</q-tooltip>
                 </q-chip>
+                  <q-chip :style="{ backgroundColor: getPlacementColor(m.placement), color: '#fff' }" class="text-caption q-ma-none q-pa-xs q-ml-sm">
+                    <span style="display:inline-block; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; max-width:120px;">{{ getPlacementLabel(m.placement) }}</span>
+                    <q-tooltip anchor="bottom middle">{{ getPlacementLabel(m.placement) }}</q-tooltip>
+                  </q-chip>
               </div>
               <div class="text-caption">{{ displayRange(m) }}</div>
             </q-item-label>
@@ -46,60 +50,9 @@
       </q-list>
     </div>
 
-    <q-dialog v-model="showCreate">
-      <q-card style="min-width: 500px">
-        <q-card-section>
-          <div class="text-h6">{{$t('adminMessages.newAdminMessage')}}</div>
-        </q-card-section>
-        <q-card-section>
-          <q-input v-model="form.title" :rules="[v => !!v || $t('adminMessages.title_required')]" :label="$t('adminMessages.title_label')" />
-          <q-input v-model="form.body" type="textarea" :label="$t('adminMessages.body_label')" class="q-mt-sm" />
-          <DateTimePicker v-model="form.start" :label="$t('adminMessages.start_optional')" class="q-mt-sm" />
-          <div class="text-caption q-mt-xs">{{$t('adminMessages.leave_empty_hint')}}</div>
-          <DateTimePicker v-model="form.end" :label="$t('adminMessages.end_optional')" class="q-mt-sm" />
-          <div class="text-caption q-mt-xs">{{$t('adminMessages.leave_empty_hint')}}</div>
-          <q-input v-model.number="form.priority" :label="$t('adminMessages.priority_label')" type="number" class="q-mt-sm" />
-          <q-icon-picker v-model="form.icon" class="q-mt-sm" />
-          <div class="q-mt-sm">
-            <q-select v-model="form.organization_id" :options="orgOptions" option-label="label" option-value="value" :label="$t('adminMessages.organization_label')" />
-          </div>
-        </q-card-section>
-        <q-card-actions align="right">
-          <q-btn flat :label="$t('common.cancel')" v-close-popup @click="showCreate=false" />
-          <q-btn color="primary" :label="$t('common.create')" @click="create" />
-        </q-card-actions>
-      </q-card>
-    </q-dialog>
+    <AdminMessageDialog v-model="dialogShow" :initial="dialogInitial" defaultPlacement="banner" @created="handleCreated" @updated="handleUpdated" />
 
-    <q-dialog v-model="editing">
-      <q-card style="min-width: 500px">
-        <q-card-section>
-          <div class="text-h6">{{$t('adminMessages.editMessage')}}</div>
-        </q-card-section>
-        <q-card-section>
-          <q-input v-model="form.title" :rules="[v => !!v || $t('adminMessages.title_required')]" :label="$t('adminMessages.title_label')" />
-          <q-input v-model="form.body" type="textarea" :label="$t('adminMessages.body_label')" class="q-mt-sm" />
-          <DateTimePicker v-model="form.start" :label="$t('adminMessages.start_optional')" class="q-mt-sm" />
-          <div class="text-caption q-mt-xs">{{$t('adminMessages.leave_empty_hint')}}</div>
-          <DateTimePicker v-model="form.end" :label="$t('adminMessages.end_optional')" class="q-mt-sm" />
-          <div class="text-caption q-mt-xs">{{$t('adminMessages.leave_empty_hint')}}</div>
-          <q-input v-model.number="form.priority" :label="$t('adminMessages.priority_label')" type="number" class="q-mt-sm" />
-          <q-icon-picker v-model="form.icon" class="q-mt-sm" />
-          <div class="q-mt-sm">
-            <template v-if="formOrgValue === null && !canChooseGlobal">
-              <q-input :model-value="$t('nav.global') || 'Global'" :label="$t('adminMessages.organization_label')" readonly dense />
-            </template>
-            <template v-else>
-              <q-select v-model="form.organization_id" :options="orgOptions" option-label="label" option-value="value" :label="$t('adminMessages.organization_label')" />
-            </template>
-          </div>
-        </q-card-section>
-        <q-card-actions align="right">
-          <q-btn flat :label="$t('common.cancel')" v-close-popup @click="editing=false" />
-          <q-btn color="primary" :label="$t('common.save')" @click="save" />
-        </q-card-actions>
-      </q-card>
-    </q-dialog>
+    <!-- Editing / creation handled by shared AdminMessageDialog component -->
 
   </div>
 </template>
@@ -114,10 +67,11 @@ import orbitSchedules from 'src/services/orbitSchedules.js'
 import DateTimePicker from 'src/components/DateTimePicker.vue'
 // Use a local QIconPicker component as a lightweight fallback.
 import QIconPicker from 'src/components/QIconPicker.vue'
+import AdminMessageDialog from 'src/components/AdminMessageDialog.vue'
 
 export default defineComponent({
   name: 'AdminMessages',
-  components: { DateTimePicker, QIconPicker },
+  components: { DateTimePicker, QIconPicker, AdminMessageDialog },
   setup () {
     const auth = useAuth()
     fetchOrganizations()
@@ -126,8 +80,9 @@ export default defineComponent({
     const messages = ref([])
     const showCreate = ref(false)
     const editing = ref(false)
-    const form = ref({ title: '', body: '', start: null, end: null, priority: 0, organization_id: null, id: null, icon: null })
-    const editingOriginalOrg = ref(null)
+    const form = ref({ title: '', body: '', start: null, end: null, priority: 0, organization_id: null, id: null, icon: null, placement: 'banner' })
+    const dialogShow = ref(false)
+    const dialogInitial = ref(null)
 
     const canChooseGlobal = computed(() => {
       try {
@@ -184,12 +139,12 @@ export default defineComponent({
     }
 
     const openCreate = () => {
-      form.value = { title: '', body: '', start: null, end: null, priority: 0, organization_id: determineDefaultOrg(), id: null, icon: null }
-      showCreate.value = true
+      dialogInitial.value = { title: '', body: '', start: null, end: null, priority: 0, organization_id: determineDefaultOrg(), id: null, icon: null, placement: 'banner' }
+      dialogShow.value = true
     }
 
     // If the org options arrive after the dialog was opened, ensure we set a sensible default
-    watch([() => showCreate.value, orgOptions], ([show]) => {
+    watch([() => dialogShow.value, orgOptions], ([show]) => {
       try {
         if (!show) return
         if (form.value && (form.value.organization_id === null || form.value.organization_id === undefined)) {
@@ -284,6 +239,28 @@ export default defineComponent({
 
     const { t, locale } = useI18n()
 
+    const placementOptions = [
+      { label: t('adminMessages.placement_frontpage') || 'Front page', value: 'frontpage' },
+      { label: t('adminMessages.placement_banner') || 'Banner', value: 'banner' }
+    ]
+
+    const getPlacementLabel = (p) => {
+      try {
+        const found = placementOptions.find(x => x.value === p)
+        if (found) return found.label
+        return String(p || '')
+      } catch (e) { return String(p || '') }
+    }
+
+    const getPlacementColor = (p) => {
+      try {
+        if (!p) return '#6b6b6b'
+        if (p === 'frontpage') return '#1976d2'
+        if (p === 'banner') return '#6b6b6b'
+        return '#6b6b6b'
+      } catch (e) { return '#6b6b6b' }
+    }
+
     const formatDate = (iso) => {
       if (!iso) return ''
       try {
@@ -344,76 +321,15 @@ export default defineComponent({
       } catch (e) { return '' }
     }
 
-    const create = async () => {
+    function handleCreated(created) {
       try {
-        // validation
-        if (!form.value.title || String(form.value.title).trim() === '') {
-          $q.notify({ type: 'negative', message: 'Title is required' })
-          return
+        if (matchesOrg(created.organization_id)) {
+          const idx = messages.value.findIndex(x => String(x.id) === String(created.id))
+          if (idx === -1) messages.value.push(created)
+          else messages.value.splice(idx, 1, created)
+          sortMessages(messages.value)
         }
-
-        // sanitize payload: remove empty strings so backend optional datetimes won't 422
-        const payload = { title: String(form.value.title).trim() }
-        if (form.value.body && String(form.value.body).trim() !== '') payload.body = form.value.body
-        if (form.value.start && String(form.value.start).trim() !== '') payload.start = String(form.value.start).trim()
-        if (form.value.end && String(form.value.end).trim() !== '') payload.end = String(form.value.end).trim()
-        if (form.value.priority !== null && form.value.priority !== undefined && form.value.priority !== '') payload.priority = Number(form.value.priority) || 0
-        // normalize organization id (allow null) and support option objects
-        const _org = form.value.organization_id
-        if (_org === null || _org === 'null') {
-          payload.organization_id = null
-        } else if (typeof _org === 'object') {
-          if (_org && ('value' in _org)) {
-            payload.organization_id = (_org.value === null || _org.value === undefined) ? null : String(_org.value)
-          } else if (_org && ('id' in _org)) {
-            payload.organization_id = (_org.id === null || _org.id === undefined) ? null : String(_org.id)
-          } else {
-            payload.organization_id = (_org === null || _org === undefined) ? null : String(_org)
-          }
-        } else if (_org != null) {
-          payload.organization_id = String(_org)
-        }
-        // include selected icon (optional)
-        if (form.value.icon && String(form.value.icon).trim() !== '') payload.icon = String(form.value.icon).trim()
-
-        // Prevent non-global admins from creating global messages
-        if (!canChooseGlobal.value && (payload.organization_id === null || payload.organization_id === undefined)) {
-          $q.notify({ type: 'negative', message: 'Please select an organization' })
-          return
-        }
-
-        const created = await createAdminMessage(payload)
-        // reset form and close
-        form.value = { title: '', body: '', start: null, end: null, priority: 0, organization_id: null, id: null, icon: null }
-        showCreate.value = false
-        $q.notify({ type: 'positive', message: 'Message created' })
-        try {
-          // update UI in-place if the created message applies to current selection
-          if (matchesOrg(created.organization_id)) {
-            const idx = messages.value.findIndex(x => String(x.id) === String(created.id))
-            if (idx === -1) messages.value.push(created)
-            else messages.value.splice(idx, 1, created)
-            sortMessages(messages.value)
-          }
-        } catch (e) {}
-        // broadcast to other components/tabs so banners update without reload
-        try {
-          const evt = { type: 'admin_message', action: 'create', message: created }
-          try { window.dispatchEvent(new CustomEvent('admin:message', { detail: evt })) } catch (e) {}
-          try { if (typeof localStorage !== 'undefined') localStorage.setItem('admin:message', JSON.stringify({ ts: Date.now(), payload: evt })) } catch (e) {}
-        } catch (e) {}
-      } catch (e) {
-        console.error(e)
-        // present clear validation errors from backend
-        const msg = e?.response?.data?.detail || (e?.message || 'Failed to create message')
-        if (Array.isArray(msg)) {
-          $q.notify({ type: 'negative', message: msg.map(m => m.msg || JSON.stringify(m)).join('; ') })
-        } else if (typeof msg === 'string') {
-          $q.notify({ type: 'negative', message: msg })
-        } else {
-          $q.notify({ type: 'negative', message: 'Failed to create message' })
-        }
-      }
+      } catch (e) {}
     }
 
     const edit = (m) => {
@@ -421,81 +337,21 @@ export default defineComponent({
       const opts = orgOptions.value || []
       const orgVal = (m && (m.organization_id === null || m.organization_id === undefined)) ? null : (m && m.organization_id != null ? String(m.organization_id) : null)
       const opt = orgVal == null ? (opts.find(o => o.value === null) || null) : (opts.find(o => String(o.value) === String(orgVal)) || null)
-      form.value = { ...m, organization_id: opt, icon: (m && m.icon) ? m.icon : null }
-      editingOriginalOrg.value = orgVal
-      editing.value = true
+      dialogInitial.value = { ...m, organization_id: opt, icon: (m && m.icon) ? m.icon : null, placement: (m && m.placement) ? m.placement : 'banner' }
+      dialogShow.value = true
     }
 
-    const save = async () => {
+    function handleUpdated(updated) {
       try {
-        if (!form.value.title || String(form.value.title).trim() === '') {
-          $q.notify({ type: 'negative', message: 'Title is required' })
-          return
-        }
-        const id = form.value.id
-        const payload = { title: String(form.value.title).trim() }
-        if (form.value.body && String(form.value.body).trim() !== '') payload.body = form.value.body
-        if (form.value.start && String(form.value.start).trim() !== '') payload.start = String(form.value.start).trim()
-        if (form.value.end && String(form.value.end).trim() !== '') payload.end = String(form.value.end).trim()
-        if (form.value.priority !== null && form.value.priority !== undefined && form.value.priority !== '') payload.priority = Number(form.value.priority) || 0
-        const _org2 = form.value.organization_id
-        if (_org2 === null || _org2 === 'null') {
-          payload.organization_id = null
-        } else if (typeof _org2 === 'object') {
-          if (_org2 && ('value' in _org2)) {
-            payload.organization_id = (_org2.value === null || _org2.value === undefined) ? null : String(_org2.value)
-          } else if (_org2 && ('id' in _org2)) {
-            payload.organization_id = (_org2.id === null || _org2.id === undefined) ? null : String(_org2.id)
-          } else {
-            payload.organization_id = (_org2 === null || _org2 === undefined) ? null : String(_org2)
-          }
-        } else if (_org2 != null) {
-          payload.organization_id = String(_org2)
-        }
-        if (form.value.icon && String(form.value.icon).trim() !== '') payload.icon = String(form.value.icon).trim()
-
-        // Prevent non-global admins from turning a message global
-        if (!canChooseGlobal.value && (payload.organization_id === null || payload.organization_id === undefined)) {
-          $q.notify({ type: 'negative', message: 'Only global admins can set a message as global' })
-          return
-        }
-        // Prevent non-global admins from editing an existing global message
-        if (editingOriginalOrg.value === null && !canChooseGlobal.value) {
-          $q.notify({ type: 'negative', message: 'You are not allowed to modify global messages' })
-          return
-        }
-
-        const updated = await updateAdminMessage(id, payload)
-        editing.value = false
-        form.value = { title: '', body: '', start: null, end: null, priority: 0, organization_id: null, id: null, icon: null }
-        $q.notify({ type: 'positive', message: 'Message updated' })
-        try {
-          const idx = messages.value.findIndex(x => String(x.id) === String(updated.id))
-          if (matchesOrg(updated.organization_id)) {
-            if (idx === -1) messages.value.push(updated)
-            else messages.value.splice(idx, 1, updated)
-          } else {
-            if (idx !== -1) messages.value.splice(idx, 1)
-          }
-          sortMessages(messages.value)
-        } catch (e) {}
-        // broadcast updated message to other components/tabs
-        try {
-          const evt = { type: 'admin_message', action: 'update', message: updated }
-          try { window.dispatchEvent(new CustomEvent('admin:message', { detail: evt })) } catch (e) {}
-          try { if (typeof localStorage !== 'undefined') localStorage.setItem('admin:message', JSON.stringify({ ts: Date.now(), payload: evt })) } catch (e) {}
-        } catch (e) {}
-      } catch (e) {
-        console.error(e)
-        const msg = e?.response?.data?.detail || (e?.message || 'Failed to update message')
-        if (Array.isArray(msg)) {
-          $q.notify({ type: 'negative', message: msg.map(m => m.msg || JSON.stringify(m)).join('; ') })
-        } else if (typeof msg === 'string') {
-          $q.notify({ type: 'negative', message: msg })
+        const idx = messages.value.findIndex(x => String(x.id) === String(updated.id))
+        if (matchesOrg(updated.organization_id)) {
+          if (idx === -1) messages.value.push(updated)
+          else messages.value.splice(idx, 1, updated)
         } else {
-          $q.notify({ type: 'negative', message: 'Failed to update message' })
+          if (idx !== -1) messages.value.splice(idx, 1)
         }
-      }
+        sortMessages(messages.value)
+      } catch (e) {}
     }
 
     const remove = async (m) => {
@@ -521,7 +377,7 @@ export default defineComponent({
       } catch (e) { return false }
     }
 
-    return { messages, showCreate, editing, form, orgOptions, iconOptions, create, edit, save, remove, displayRange, openCreate, canChooseGlobal, formOrgValue, isFaIcon, isDark, getOrgLabel, getOrgColor, getOrgInitial }
+    return { messages, showCreate, editing, form, orgOptions, iconOptions, placementOptions, edit, remove, displayRange, openCreate, canChooseGlobal, formOrgValue, isFaIcon, isDark, getOrgLabel, getOrgColor, getOrgInitial, getPlacementLabel, getPlacementColor, dialogShow, dialogInitial, handleCreated, handleUpdated }
   }
 })
 </script>

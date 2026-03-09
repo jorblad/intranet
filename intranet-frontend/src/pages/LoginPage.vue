@@ -32,6 +32,8 @@ export default {
   methods: {
     async login() {
 
+      // First attempt the authentication request. Only handle request errors here.
+      let access_token, refresh_token;
       try {
         const formData = new FormData();
         formData.append('username', this.username);
@@ -45,18 +47,31 @@ export default {
           },
         });
 
-        const access_token = response.data.access_token;
-        const refresh_token = response.data.refresh_token;
+        access_token = response.data.access_token;
+        refresh_token = response.data.refresh_token;
 
         // Store tokens in localStorage
         localStorage.setItem('access_token', access_token);
         localStorage.setItem('refresh_token', refresh_token);
 
-        // Redirect to the desired route
-        this.$router.push({ name: 'schedules' }); // Change this to your route
+        // clear any previous error
+        this.errorMessage = '';
       } catch (error) {
-        console.error('Login failed:', error);
+        console.error('Login request failed:', error);
         this.errorMessage = 'Fel användarnamn eller lösenord'; // Set error message
+        return;
+      }
+
+      // Navigation should be attempted after successful authentication. Navigation
+      // errors (for example incorrect route name) should not be treated as login
+      // failures that would overwrite valid tokens, so handle them separately.
+      try {
+        // Use the named route `index` defined in router/routes.js
+        await this.$router.push({ name: 'index' });
+      } catch (navErr) {
+        // Navigation failed (maybe route name mismatch). Log and fall back to path.
+        console.warn('Navigation after login failed, falling back to path:', navErr);
+        try { await this.$router.push('/'); } catch (e) { console.warn('Fallback navigation also failed', e); }
       }
     },
     isAuthenticated() {
@@ -67,7 +82,8 @@ export default {
       // Remove tokens from localStorage and redirect to login page
       localStorage.removeItem('access_token');
       localStorage.removeItem('refresh_token');
-      this.$router.push({ name: 'login' }); // Change this to your login route
+      // The login route in router/routes.js is at path `/login` (no name), so push by path.
+      this.$router.push('/login').catch(() => {});
     },
   },
 };

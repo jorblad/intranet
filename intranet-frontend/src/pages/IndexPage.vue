@@ -36,6 +36,7 @@
       </div>
 
       <div class="col-12 col-md-4">
+        <AdminMessagesCard class="q-mb-md" />
         <q-card flat bordered>
           <q-card-section class="row items-center justify-between">
             <div class="text-h6">{{ upcoming.length }} {{ $t('termschedules.upcoming') }}</div>
@@ -80,6 +81,7 @@ import axios from 'axios'
 import { useRouter } from 'vue-router'
 import { useAuth, fetchCurrentUser } from 'src/services/auth'
 import { useI18n } from 'vue-i18n'
+import AdminMessagesCard from 'src/components/AdminMessagesCard.vue'
 
 const { t, locale } = useI18n()
 const router = useRouter()

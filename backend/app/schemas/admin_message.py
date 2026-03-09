@@ -10,6 +10,7 @@ class AdminMessageBase(BaseModel):
     body_i18n: Optional[Dict[str, str]] = None
     organization_id: Optional[str] = None
     icon: Optional[str] = None
+    placement: Optional[str] = 'banner'
     start: Optional[datetime] = None
     end: Optional[datetime] = None
     priority: Optional[int] = 0
@@ -23,6 +24,7 @@ class AdminMessageUpdate(BaseModel):
     title: Optional[str] = None
     body: Optional[str] = None
     organization_id: Optional[str] = None
+    placement: Optional[str] = None
     icon: Optional[str] = None
     start: Optional[datetime] = None
     end: Optional[datetime] = None

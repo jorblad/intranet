@@ -136,7 +136,7 @@
               <q-icon name='announcement' />
             </q-item-section>
             <q-item-section>
-              <q-item-label>Messages</q-item-label>
+              <q-item-label>{{$t('nav.messages')}}</q-item-label>
             </q-item-section>
           </q-item>
         </router-link>

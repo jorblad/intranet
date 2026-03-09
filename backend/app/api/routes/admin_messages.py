@@ -33,7 +33,7 @@ def _has_global_org_admin(user) -> bool:
 
 
 @router.get("/admin/messages")
-def admin_messages_index(organization_id: str | None = None, active: bool = True, db: Session = Depends(get_db), _user=Depends(get_current_user)):
+def admin_messages_index(organization_id: str | None = None, active: bool = True, placement: str | None = None, db: Session = Depends(get_db), _user=Depends(get_current_user)):
     # Anyone may read messages for an organization they are assigned to or global messages
     # if organization_id provided, ensure the user is assigned to the org (or allow superadmin)
     if organization_id is not None:
@@ -47,13 +47,14 @@ def admin_messages_index(organization_id: str | None = None, active: bool = True
             if not user_assigned_to_org(_user, organization_id):
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not allowed to view messages for this organization")
 
-    items = list_admin_messages_for_org(db, organization_id, active_only=active)
+    items = list_admin_messages_for_org(db, organization_id, active_only=active, placement=placement)
     return [AdminMessageOut(**{
         "id": i.id,
         "title": i.title,
         "body": i.body,
         "title_i18n": getattr(i, 'title_i18n', None),
         "body_i18n": getattr(i, 'body_i18n', None),
+        "placement": getattr(i, 'placement', None),
         "icon": i.icon,
         "organization_id": i.organization_id,
         "start": i.start,
@@ -87,6 +88,7 @@ def admin_messages_create(payload: AdminMessageCreate, db: Session = Depends(get
         body=payload.body,
         title_i18n=getattr(payload, 'title_i18n', None),
         body_i18n=getattr(payload, 'body_i18n', None),
+        placement=getattr(payload, 'placement', None),
         organization_id=org_id,
         start=payload.start,
         end=payload.end,
@@ -103,6 +105,7 @@ def admin_messages_create(payload: AdminMessageCreate, db: Session = Depends(get
             "title_i18n": getattr(msg, 'title_i18n', None),
             "body_i18n": getattr(msg, 'body_i18n', None),
             "icon": msg.icon,
+            "placement": getattr(msg, 'placement', None),
             "organization_id": msg.organization_id,
             "start": msg.start.isoformat() if getattr(msg, 'start', None) else None,
             "end": msg.end.isoformat() if getattr(msg, 'end', None) else None,
@@ -124,6 +127,7 @@ def admin_messages_create(payload: AdminMessageCreate, db: Session = Depends(get
         "body": msg.body,
         "title_i18n": getattr(msg, 'title_i18n', None),
         "body_i18n": getattr(msg, 'body_i18n', None),
+        "placement": getattr(msg, 'placement', None),
         "icon": msg.icon,
         "organization_id": msg.organization_id,
         "start": msg.start,
@@ -156,6 +160,7 @@ def admin_messages_detail(msg_id: str, db: Session = Depends(get_db), _user=Depe
         "title": msg.title,
         "body": msg.body,
         "icon": msg.icon,
+        "placement": getattr(msg, 'placement', None),
         "organization_id": msg.organization_id,
         "start": msg.start,
         "end": msg.end,
@@ -198,6 +203,7 @@ def admin_messages_update(msg_id: str, payload: AdminMessageUpdate, db: Session 
             "title_i18n": getattr(updated, 'title_i18n', None),
             "body_i18n": getattr(updated, 'body_i18n', None),
             "icon": updated.icon,
+            "placement": getattr(updated, 'placement', None),
             "organization_id": updated.organization_id,
             "start": updated.start.isoformat() if getattr(updated, 'start', None) else None,
             "end": updated.end.isoformat() if getattr(updated, 'end', None) else None,
@@ -220,6 +226,7 @@ def admin_messages_update(msg_id: str, payload: AdminMessageUpdate, db: Session 
         "title_i18n": getattr(updated, 'title_i18n', None),
         "body_i18n": getattr(updated, 'body_i18n', None),
         "icon": updated.icon,
+        "placement": getattr(updated, 'placement', None),
         "organization_id": updated.organization_id,
         "start": updated.start,
         "end": updated.end,
@@ -242,7 +249,7 @@ def admin_messages_delete(msg_id: str, db: Session = Depends(get_db), _user=Depe
         require_org_admin_or_superadmin(_user, msg.organization_id)
     # publish delete event before removing so we can include id/org
     try:
-        payload_event = {"type": "admin_message", "action": "delete", "message": {"id": msg.id, "organization_id": msg.organization_id}}
+        payload_event = {"type": "admin_message", "action": "delete", "message": {"id": msg.id, "organization_id": msg.organization_id, "placement": getattr(msg, 'placement', None)}}
         envelope = json.dumps({"__origin_pid": os.getpid(), "payload": payload_event})
         try:
             _pubsub.schedule_publish(envelope)

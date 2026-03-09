@@ -227,7 +227,7 @@
         </div>
       </div>
       <q-table
-        v-if="!$q.screen.xs"
+        v-if="!$q.screen.lt.sm"
         :rows="rows"
         :columns="columns"
         row-key="id"
@@ -245,7 +245,7 @@
 
       >
                 <template v-slot:body="props">
-                  <q-tr :props="props" :class="{ 'mobile-card': $q.screen.xs }">
+                  <q-tr :props="props" :class="{ 'mobile-card': $q.screen.lt.sm }">
                     <q-td key="select" :props="props" style="width:56px">
                       <q-checkbox
                         :model-value="isRowSelected(props.row)"
@@ -368,23 +368,24 @@
             </q-td>
 
             <q-td key="notes" :props="props">
-              {{ props.row.notes }}
+              <div class="notes-cell">
+                <div class="notes-preview md-render" v-html="props.row._previewHtml || renderPreviewFallback(props.row.notes)"></div>
+                <div class="notes-actions q-mt-xs">
+                  <q-btn outline dense class="pill-btn" size="sm" v-if="isLongNote(props.row)" :label="$te('common.readMore') ? $t('common.readMore') : 'Read more'" @click.stop="openNoteDialog(props.row)" />
+                </div>
+
                 <q-popup-edit
-                v-model="props.row.notes"
-                v-slot="scope"
-                buttons
-                persistent
-                :label-set="$t('termschedules.save')"
-                :label-cancel="$t('termschedules.cancel')"
-                v-if="!$q.screen.lt.sm"
-                @save="updateEntry(props.row)">
-                <q-editor
-                  v-model="scope.value"
-                  min-height="5rem"
-                  autofocus
-                  @keyup.enter.stop
-                />
-              </q-popup-edit>
+                  v-model="props.row.notes"
+                  v-slot="scope"
+                  buttons
+                  persistent
+                  :label-set="$t('termschedules.save')"
+                  :label-cancel="$t('termschedules.cancel')"
+                  v-if="!$q.screen.lt.sm"
+                  @save="updateEntry(props.row)">
+                  <markdown-editor v-model="scope.value" />
+                </q-popup-edit>
+              </div>
             </q-td>
 
             <q-td key="public_event" :props="props">
@@ -441,6 +442,14 @@
                               {{ typeof u === 'object' ? (u.label || u.name || u.value) : getUserNameById(u) }}
                             </q-chip>
                           </div>
+
+                          <div class="q-mt-sm">
+                            <strong>{{$t('termschedules.notes_label') || 'Notes'}}:</strong>
+                            <div class="notes-preview q-mt-xs md-render" v-html="row._previewHtml || renderPreviewFallback(row.notes)"></div>
+                            <div v-if="isLongNote(row)" class="q-mt-xs">
+                              <q-btn outline dense small class="pill-btn" :label="$te('common.readMore') ? $t('common.readMore') : 'Read more'" @click.stop="openNoteDialog(row)" />
+                            </div>
+                          </div>
                         </div>
                       </div>
                     </q-card-section>
@@ -455,11 +464,14 @@
     </div>
 
     <q-dialog v-model="dialogVisible">
-      <q-card>
+      <q-card :class="{ 'detail-full-width': detailFullWidth }">
             <q-card-section>
-              <div class="text-h6">
-                  {{ displayStartEnd(selectedRow) }} {{ $t('termschedules.details') }}
+              <div class="row items-center justify-between">
+                <div class="text-h6">{{ displayStartEnd(selectedRow) }} {{ $t('termschedules.details') }}</div>
+                <div>
+                  <q-btn dense flat round icon="open_in_full" :color="detailFullWidth ? 'primary' : undefined" @click="detailFullWidth = !detailFullWidth" :title="detailFullWidth ? ($te('adminMessages.exitFullWidth') ? $t('adminMessages.exitFullWidth') : 'Exit full width') : ($te('adminMessages.fullWidth') ? $t('adminMessages.fullWidth') : 'Full width')" />
                 </div>
+              </div>
             </q-card-section>
 
         <q-card-section>
@@ -500,7 +512,7 @@
             stack-label
             :label="$t('termschedules.cant_come_label')"
           />
-          <q-input v-model="editedRow.notes" :label="$t('termschedules.notes_label')" autogrow/>
+          <markdown-editor v-model="editedRow.notes" />
           <q-toggle
                 v-model="editedRow.public_event"
                 :label="$t('termschedules.public_toggle')"
@@ -512,6 +524,26 @@
           <q-btn color="secondary" :label="$t('termschedules.cancel')" @click="cancelChanges" />
           <q-space />
           <q-btn color="primary" :label="$t('termschedules.save')" @click="saveChanges" />
+        </q-card-actions>
+      </q-card>
+    </q-dialog>
+
+    <!-- Read-more / full notes dialog -->
+    <q-dialog v-model="noteDialogVisible">
+      <q-card style="min-width:320px; max-width:95vw;" :class="{ 'detail-full-width': detailFullWidth }">
+        <q-card-section>
+          <div class="row items-center justify-between">
+            <div class="text-h6">{{ noteDialogTitle }}</div>
+            <div>
+              <q-btn dense flat round icon="open_in_full" :color="detailFullWidth ? 'primary' : undefined" @click="detailFullWidth = !detailFullWidth" :title="detailFullWidth ? ($te('adminMessages.exitFullWidth') ? $t('adminMessages.exitFullWidth') : 'Exit full width') : ($te('adminMessages.fullWidth') ? $t('adminMessages.fullWidth') : 'Full width')" />
+            </div>
+          </div>
+        </q-card-section>
+        <q-card-section>
+          <div class="notes-full md-render" v-html="noteDialogHtml"></div>
+        </q-card-section>
+          <q-card-actions align="right">
+          <q-btn flat :label="$te('common.close') ? $t('common.close') : 'Close'" @click="noteDialogVisible = false" />
         </q-card-actions>
       </q-card>
     </q-dialog>
@@ -783,8 +815,8 @@
 /* Slim date/time cell used in table and mobile layouts */
 .date-cell
   display: inline-block
-  min-width: 80px
-  max-width: 110px
+  min-width: 110px
+  max-width: 140px
   font-size: 0.85rem
   padding: 2px 6px
   text-align: center
@@ -798,6 +830,50 @@ td.sticky-col
 /* Bulk edit compact pairing for mobile + responsive layout */
 .bulk-pair
   display: flex
+
+/* Notes preview styling and read-more */
+.notes-preview
+  display: -webkit-box
+  -webkit-box-orient: vertical
+  -webkit-line-clamp: 2
+  overflow: hidden
+  max-width: 30ch
+  white-space: normal
+  word-break: break-word
+
+.notes-col
+  max-width: 30ch
+  overflow: hidden
+
+@media (min-width: 600px)
+  .notes-preview
+    -webkit-line-clamp: 3
+    max-width: 60ch
+  .notes-col
+    max-width: 60ch
+
+.notes-cell
+  display: flex
+  flex-direction: column
+
+.notes-actions
+  display: flex
+  gap: 8px
+
+.pill-btn
+  border-radius: 999px
+  padding-left: 12px
+  padding-right: 12px
+  min-height: 28px
+  font-size: 0.85rem
+
+.detail-full-width
+  width: calc(98vw)
+  max-width: none
+
+.notes-full
+  white-space: normal
+  word-break: break-word
   flex-direction: column
   gap: 4px
 @media (min-width: 600px)
@@ -835,6 +911,7 @@ td.sticky-col
 import axios from 'axios'
 import { useAuth } from '../services/auth.js'
 import orbitSchedules from 'src/services/orbitSchedules.js'
+import MarkdownEditor from 'src/components/MarkdownEditor.vue'
 
 const USE_ORBIT = true
 
@@ -858,13 +935,13 @@ const api = axios.create({
 
 const columns = [
   { name: 'select', label: '', field: 'select', align: 'center', sortable: false, style: 'width:56px' },
-  { name: 'date', align: 'center', labelKey: 'termschedules.date_label', field: 'date', sortable: true, classes: 'sticky-col', headerClass: 'sticky-col' },
+  { name: 'date', align: 'center', labelKey: 'termschedules.date_label', field: 'date', sortable: true, classes: 'sticky-col', headerClass: 'sticky-col', style: 'min-width:110px; max-width:140px' },
   { name: 'name', align: 'center', labelKey: 'termschedules.name_label', field: 'name', sortable: true },
   { name: 'description', align: 'center', labelKey: 'termschedules.description_label', field: 'description', sortable: true },
   { name: 'responsible', align: 'center', labelKey: 'termschedules.responsible_label', field: 'responsible', sortable: true },
   { name: 'devotional', align: 'center', labelKey: 'termschedules.devotional_label', field: 'devotional', sortable: true },
   { name: 'cant_come', align: 'center', labelKey: 'termschedules.cant_come_label', field: 'cant_come', sortable: true },
-  { name: 'notes', align: 'center', labelKey: 'termschedules.notes_label', field: 'notes' },
+  { name: 'notes', align: 'center', labelKey: 'termschedules.notes_label', field: 'notes', classes: 'notes-col' },
   { name: 'public_event', align: 'center', labelKey: 'termschedules.public', field: 'public_event' },
   { name: 'actions', align: 'center', labelKey: '', field: 'actions' },
 ]
@@ -974,7 +1051,7 @@ const defaultRows = [
 ]
 export default {
   name: 'TermSchedules',
-
+  components: { MarkdownEditor },
 
   data() {
     return {
@@ -1055,6 +1132,12 @@ export default {
             cant_come: false,
             public_event: false,
           },
+          // note preview dialog state
+          noteDialogVisible: false,
+          noteDialogHtml: '',
+          noteDialogTitle: '',
+          // allow expanding the detail dialog to full width per-row (opt-in)
+          detailFullWidth: false,
     };
   },
 
@@ -1384,6 +1467,91 @@ export default {
         const el = document.getElementById('edited-name');
         if (el && typeof el.focus === 'function') el.focus();
       });
+    },
+
+    // Render markdown to sanitized HTML (async). Falls back to a simple renderer when libs are not available.
+    async renderMarkdownToHtml(md) {
+      if (!md) return '';
+      try {
+        const markedMod = await import('marked')
+        const domMod = await import('dompurify')
+        const markedFn = markedMod && (markedMod.default || markedMod.marked || markedMod)
+        const dompurify = domMod && (domMod.default || domMod.sanitize || domMod)
+        let raw = ''
+        if (typeof markedFn === 'function') raw = markedFn(md)
+        else if (markedFn && typeof markedFn.parse === 'function') raw = markedFn.parse(md)
+        else raw = String(md)
+        try {
+          if (dompurify && typeof dompurify.sanitize === 'function') return dompurify.sanitize(raw)
+          if (dompurify && typeof dompurify === 'function') return dompurify(raw)
+          return raw
+        } catch (e) { return raw }
+      } catch (e) {
+        return this.renderPreviewFallback(md)
+      }
+    },
+
+    // Lightweight synchronous fallback renderer used for immediate previews
+    renderPreviewFallback(md) {
+      let s = String(md || '')
+      s = s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      s = s.replace(/```(?:([^\n]*?)\n)?([\s\S]*?)```/g, (_, _lang, code) => `<pre><code>${code.replace(/</g,'&lt;')}</code></pre>`)
+      s = s.replace(/`([^`]+)`/g, '<code>$1</code>')
+      s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+      s = s.replace(/\*(?!\*)(.+?)\*/g, '<em>$1</em>')
+      s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
+      s = s.replace(/(^|\n)[ \t]*([-*])[ \t]+(.+)(?=\n|$)/g, (m, pre, _dash, content) => `${pre}<li>${content}</li>`)
+      s = s.replace(/(?:<li>.*?<\/li>\s*)+/gs, m => `<ul>${m.replace(/\s+/g,'')}</ul>`)
+      const parts = s.split(/\n{2,}/).map(p => `<p>${p.replace(/\n/g, '<br/>')}</p>`)
+      return parts.join('')
+    },
+
+    // Prepare a preview HTML for a row (sets row._previewHtml synchronously then updates asynchronously)
+    prepareRowNotesPreview(row) {
+      try {
+        if (!row) return
+        const raw = row.notes || ''
+        // fast fallback preview synchronous
+        row._previewHtml = this.renderPreviewFallback(raw)
+        // async sanitized rendering
+        this.renderMarkdownToHtml(raw).then((html) => {
+          try { row._previewHtml = html } catch (e) {}
+        }).catch(() => {})
+      } catch (e) {}
+    },
+
+    // Heuristic: determine whether a row's notes are long enough to need a "read more" button
+    isLongNote(row) {
+      try {
+        const raw = row && (row.notes || '')
+        if (!raw) return false
+
+        // If the content contains explicit markdown headings or HTML headings, consider it long
+        if (typeof raw === 'string') {
+          if (/^#{1,6}\s+/m.test(raw)) return true
+          if (/<h[1-6]\b/i.test(raw)) return true
+        }
+
+        // Strip HTML tags and measure plain-text length
+        const plain = String(raw).replace(/<[^>]+>/g, '')
+        if (plain.length > 160) return true
+        const lines = plain.split(/\r?\n/).filter(Boolean)
+        if (lines.length > 2) return true
+        return false
+      } catch (e) { return false }
+    },
+
+    // Open a dialog showing the full rendered notes for a row
+    async openNoteDialog(row) {
+      try {
+        this.noteDialogTitle = (row && (row.name || row.title)) ? `${row.name || row.title}` : this.$t('termschedules.notes') || 'Notes'
+        this.noteDialogHtml = this.renderPreviewFallback(row && row.notes)
+        this.noteDialogVisible = true
+        try {
+          const html = await this.renderMarkdownToHtml(row && row.notes)
+          this.noteDialogHtml = html
+        } catch (e) {}
+      } catch (e) { console.warn('openNoteDialog failed', e) }
     },
     // cleanup of orbit transform listener is handled in the component lifecycle beforeUnmount
     async saveChanges() {
@@ -2760,6 +2928,13 @@ export default {
     },
     activity() {
       this.loadScheduleAndEntries();
+    }
+    ,
+    rows: {
+      handler(newRows) {
+        try { if (Array.isArray(newRows)) newRows.forEach(r => this.prepareRowNotesPreview(r)) } catch (e) {}
+      },
+      deep: false,
     }
   },
 

@@ -13,7 +13,13 @@
       </template>
       <div>
         <div style="font-weight:600">{{ m.title }}</div>
-        <div v-if="m.body" style="white-space:pre-wrap">{{ m.body }}</div>
+        <div class="row items-center q-gutter-sm q-mt-xs">
+          <q-chip :style="{ backgroundColor: getOrgColor(m.organization_id), color: '#fff', maxWidth: '260px' }" class="text-caption q-ma-none q-pa-xs">
+            <span style="display:inline-block; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; max-width:220px;">{{ getOrgLabel(m.organization_id) }}</span>
+            <q-tooltip anchor="bottom middle">{{ getOrgLabel(m.organization_id) }}</q-tooltip>
+          </q-chip>
+        </div>
+        <div v-if="m.body" class="banner-body md-render" v-html="renderedHtml[m.id] || ''"></div>
       </div>
     </q-banner>
   </div>
@@ -22,6 +28,8 @@
 <script>
 import { defineComponent, ref, watch, onMounted, onBeforeUnmount, computed } from 'vue'
 import { useQuasar } from 'quasar'
+import { useAuth, fetchOrganizations } from 'src/services/auth'
+import { useI18n } from 'vue-i18n'
 import { fetchAdminMessages } from 'src/services/adminMessages'
 import orbitSchedules from 'src/services/orbitSchedules.js'
 import ensureFontAwesomeLoaded from 'src/plugins/fa-loader'
@@ -33,11 +41,15 @@ export default defineComponent({
   },
   setup (props) {
     const messages = ref([])
+    const renderedHtml = ref({})
+    const auth = useAuth()
+    const { t } = useI18n()
 
     const load = async () => {
       try {
-        const items = await fetchAdminMessages(props.organizationId)
+        const items = await fetchAdminMessages(props.organizationId, 'banner')
         messages.value = items || []
+        processRendered().catch(() => {})
       } catch (e) {
         messages.value = []
       }
@@ -45,6 +57,7 @@ export default defineComponent({
 
     onMounted(() => {
       ensureFontAwesomeLoaded().catch(() => {})
+      fetchOrganizations().catch(() => {})
       load()
     })
     watch(() => props.organizationId, load)
@@ -84,9 +97,12 @@ export default defineComponent({
         if (!msg || msg.type !== 'admin_message') return
         const action = msg.action
         const m = msg.message || {}
+        // ignore events for other placements
+        if (m.placement !== undefined && m.placement !== 'banner') return
         if (action === 'delete') {
           try {
             messages.value = messages.value.filter(x => String(x.id) !== String(m.id))
+            processRendered().catch(() => {})
           } catch (e) {}
           return
         }
@@ -95,6 +111,7 @@ export default defineComponent({
             if (!matchesOrg(m.organization_id)) {
               // if message no longer applies to this view, remove it
               messages.value = messages.value.filter(x => String(x.id) !== String(m.id))
+              processRendered().catch(() => {})
               return
             }
             // ensure we have canonical shape similar to loader
@@ -104,7 +121,51 @@ export default defineComponent({
             if (idx === -1) messages.value.push(incoming)
             else messages.value.splice(idx, 1, incoming)
             sortMessages(messages.value)
+            processRendered().catch(() => {})
           } catch (e) {}
+        }
+      } catch (e) {}
+    }
+
+    async function renderToHtml(md) {
+      if (!md) return ''
+      try {
+        const markedMod = await import('marked')
+        const domMod = await import('dompurify')
+        const markedFn = markedMod && (markedMod.default || markedMod.marked || markedMod)
+        const dompurify = domMod && (domMod.default || domMod.sanitize || domMod)
+        let raw = ''
+        if (typeof markedFn === 'function') raw = markedFn(md)
+        else if (markedFn && typeof markedFn.parse === 'function') raw = markedFn.parse(md)
+        else raw = String(md)
+        try {
+          if (dompurify && typeof dompurify.sanitize === 'function') return dompurify.sanitize(raw)
+          if (dompurify && typeof dompurify === 'function') return dompurify(raw)
+          return raw
+        } catch (e) { return raw }
+      } catch (e) {
+        // simple fallback
+        let s = String(md || '')
+        s = s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        s = s.replace(/```(?:([^\n]*?)\n)?([\s\S]*?)```/g, (_, _lang, code) => `<pre><code>${code.replace(/</g,'&lt;')}</code></pre>`)
+        s = s.replace(/`([^`]+)`/g, '<code>$1</code>')
+        s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+        s = s.replace(/\*(?!\*)(.+?)\*/g, '<em>$1</em>')
+        s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
+        s = s.replace(/(^|\n)[ \t]*([-*])[ \t]+(.+)(?=\n|$)/g, (m, pre, _dash, content) => `${pre}<li>${content}</li>`)
+        s = s.replace(/(?:<li>.*?<\/li>\s*)+/gs, m => `<ul>${m.replace(/\s+/g,'')}</ul>`)
+        const parts = s.split(/\n{2,}/).map(p => `<p>${p.replace(/\n/g, '<br/>')}</p>`)
+        return parts.join('')
+      }
+    }
+
+    async function processRendered() {
+      try {
+        renderedHtml.value = {}
+        for (const m of messages.value) {
+          try {
+            renderedHtml.value[m.id] = await renderToHtml(m.body || '')
+          } catch (e) { renderedHtml.value[m.id] = '' }
         }
       } catch (e) {}
     }
@@ -175,7 +236,42 @@ export default defineComponent({
       } catch (e) { return false }
     }
 
-    return { messages, isFaIcon, isDark }
+    const getOrgLabel = (orgId) => {
+      try {
+        if (orgId === null || orgId === undefined) return t('nav.global') || 'Global'
+        const orgs = auth.organizations || []
+        const found = orgs.find(o => String(o.id) === String(orgId))
+        if (found) return found.name || found.label || String(orgId)
+        if (typeof orgId === 'object') return orgId.name || orgId.label || String(orgId)
+        return String(orgId)
+      } catch (e) { return '' }
+    }
+
+    const stringToColor = (s) => {
+      try {
+        const str = String(s || '')
+        let hash = 0
+        for (let i = 0; i < str.length; i++) {
+          hash = str.charCodeAt(i) + ((hash << 5) - hash)
+          hash = hash & hash
+        }
+        const h = Math.abs(hash) % 360
+        return `hsl(${h}, 70%, 45%)`
+      } catch (e) { return 'grey' }
+    }
+
+    const getOrgColor = (orgId) => {
+      try {
+        if (orgId === null || orgId === undefined) return '#6b6b6b'
+        const orgs = auth.organizations || []
+        const found = orgs.find(o => String(o.id) === String(orgId))
+        if (found && found.color) return found.color
+        const name = found ? (found.name || found.label) : (typeof orgId === 'object' ? (orgId.name || orgId.label) : String(orgId))
+        return stringToColor(name)
+      } catch (e) { return '#6b6b6b' }
+    }
+
+    return { messages, isFaIcon, isDark, getOrgLabel, getOrgColor, renderedHtml }
   }
 })
 </script>
@@ -184,4 +280,12 @@ export default defineComponent({
 .admin-banners {
   max-width: 100%;
 }
+.banner-body { font-size: 0.98rem; color: inherit; }
+.banner-body p { margin: 0 0 0.4em; line-height: 1.3 }
+.banner-body code { background: #f5f5f5; color: #111; padding: 0.06em 0.28em; border-radius: 3px; font-family: monospace; font-size: .95em; }
+.banner-body pre { background: #f5f5f5; padding: .6em; border-radius: 4px; overflow: auto; font-family: monospace; }
+.banner-body ::v-deep h1, .banner-body ::v-deep h2, .banner-body ::v-deep h3 { margin: 0.15em 0 0.35em; font-weight: 600; line-height: 1.15; color: inherit; }
+.banner-body ::v-deep h1 { font-size: 1.25rem; }
+.banner-body ::v-deep h2 { font-size: 1.0rem; }
+.banner-body ::v-deep h3 { font-size: 0.95rem; }
 </style>

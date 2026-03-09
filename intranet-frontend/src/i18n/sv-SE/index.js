@@ -20,6 +20,7 @@ export default {
     orgs: 'Orgs',
     org: 'Organisation',
     assignments: 'Tilldelningar',
+    messages: 'Meddelanden',
   },
   adminPermissions: {
     codename: 'Kodnamn',
@@ -196,8 +197,11 @@ export default {
     edit: 'Redigera',
     delete: 'Ta bort',
     cancel: 'Avbryt',
+    readMore: 'Läs mer',
+    readLess: 'Visa mindre',
     save: 'Spara',
-    create: 'Skapa'
+    create: 'Skapa',
+    close: 'Stäng'
   },
   adminMessages: {
     title: 'Adminmeddelanden',
@@ -213,6 +217,12 @@ export default {
     end_optional: 'Slut (valfritt)',
     leave_empty_hint: 'Lämna tomt för att behålla meddelandet tills det tas bort manuellt.',
     priority_label: 'Prioritet',
+    priority_help: 'Högre tal = högre prioritet (visas först). Meddelanden med samma prioritet sorteras efter starttid.',
+    placement_label: 'Placering',
+    placement_frontpage: 'Startsida',
+    placement_banner: 'Banner',
+    preview: 'Förhandsvisning',
+    banner_limit_note: 'Banners stödjer endast begränsad markdown; avancerad styling och rå HTML tas bort.',
     organization_label: 'Organisation',
     delete_confirm: 'Radera detta meddelande?',
     title_required: 'Rubrik krävs',

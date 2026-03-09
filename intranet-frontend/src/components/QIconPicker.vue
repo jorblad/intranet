@@ -188,7 +188,7 @@ export default defineComponent({
 
     const selectIcon = (ic) => {
       if (!ic) return
-      if (loaded && ic.class) {
+      if (loaded.value && ic.class) {
         const cls = Array.isArray(ic.class) ? ic.class.join(' ') : ic.class
         localValue.value = cls
       } else {

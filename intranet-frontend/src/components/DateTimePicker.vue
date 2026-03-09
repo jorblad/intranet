@@ -53,7 +53,7 @@ export default defineComponent({
         return (typeof navigator !== 'undefined' && navigator.language) ? navigator.language : 'en-US'
       } catch (e) { return 'en-US' }
     })
-    
+
 
     const parseModel = (val) => {
       if (!val) { selectedDate.value = null; selectedTime.value = null; return }

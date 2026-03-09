@@ -25,6 +25,8 @@ class AdminMessage(Base):
     end = Column(DateTime(timezone=True), nullable=True)
     # optional priority to order messages
     priority = Column(Integer, default=0)
+    # placement indicates where the message should be shown (e.g. 'banner', 'frontpage', etc.)
+    placement = Column(String, nullable=False, default='banner')
     created_by = Column(String, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
