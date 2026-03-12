@@ -15,6 +15,16 @@ from app.crud.user import (
     update_user,
     regenerate_calendar_token,
 )
+from app.crud.invitation import (
+    create_invitation,
+    get_invitation_by_token,
+    mark_invitation_used,
+)
+from app.crud.setting import (
+    get_setting,
+    set_setting,
+    list_settings,
+)
 from app.crud.organization import (
     create_organization,
     get_organization,
@@ -116,6 +126,12 @@ __all__ = [
     "list_assignments",
     "list_assignments_for_org",
     "delete_assignment",
+    "create_invitation",
+    "get_invitation_by_token",
+    "mark_invitation_used",
+    "get_setting",
+    "set_setting",
+    "list_settings",
     "update_entry",
     "update_schedule",
 ]

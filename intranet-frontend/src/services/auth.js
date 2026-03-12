@@ -66,7 +66,7 @@ export async function fetchCurrentUser() {
 export async function fetchOrganizations() {
   try {
     const res = await axios.get('/api/rbac/organizations')
-    state.organizations = res.data || []
+    state.organizations = res.data?.data || res.data || []
     // Ensure selectedOrganization is valid for this user; clear if it's not present
     try {
       const sid = state.selectedOrganization

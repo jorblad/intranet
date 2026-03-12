@@ -192,11 +192,11 @@ async function fetchActivities() {
     ])
 
     activities.value = actsResp.data?.data || actsResp.data || []
-    orgs.value = orgsResp.data || []
+    orgs.value = orgsResp.data?.data || orgsResp.data || []
 
     // build org id -> name map
     const orgMap = {}
-    orgs.value.forEach(o => { if (o && o.id) orgMap[String(o.id)] = o.name })
+    orgs.value.forEach(o => { if (o && (o.id || (o.attributes && o.attributes.id))) orgMap[String(o.id || (o.attributes && o.attributes.id))] = o.attributes?.name || o.name || '' })
 
     const multipleOrgs = (orgs.value && orgs.value.length > 1)
 

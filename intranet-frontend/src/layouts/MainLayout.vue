@@ -99,7 +99,7 @@
           </q-item>
         </router-link>
 
-        <q-item-label header class="q-mt-md">{{$t('nav.admin')}}</q-item-label>
+        <q-item-label header class="q-mt-md" v-if="isAdminVisible">{{$t('nav.admin')}}</q-item-label>
         <router-link v-if="isAdminVisible" :to="{ name: 'admin-orgs' }" class="custom-router-link">
           <q-item clickable v-ripple class="q-list-padding">
             <q-item-section avatar>
@@ -140,6 +140,16 @@
             </q-item-section>
           </q-item>
         </router-link>
+        <router-link v-if="isAdminVisible" :to="{ name: 'admin-settings' }" class="custom-router-link">
+          <q-item clickable v-ripple>
+            <q-item-section avatar>
+              <q-icon name='settings' />
+            </q-item-section>
+            <q-item-section>
+              <q-item-label>{{$t('nav.settings')}}</q-item-label>
+            </q-item-section>
+          </q-item>
+        </router-link>
         <router-link v-if="isAdminVisible" :to="{ name: 'admin-roles' }" class="custom-router-link">
           <q-item clickable v-ripple>
             <q-item-section avatar>
@@ -170,7 +180,7 @@
             </q-item-section>
           </q-item>
         </router-link>
-      <q-expansion-item icon="sync" label="Sync Debug" :dense="true" class="q-my-sm">
+      <q-expansion-item icon="sync" label="Sync Debug" :dense="true" class="q-my-sm" v-if="isAdminVisible">
           <div class="q-pa-sm">
             <div class="row items-center q-col-gutter-sm">
               <div class="col">
@@ -201,7 +211,7 @@
     </q-drawer>
 
     <q-page-container>
-      <AdminBanners :organizationId="selectedOrg" />
+      <AdminBanners v-if="!isInviteAccept" :organizationId="selectedOrg" />
       <router-view />
     </q-page-container>
   </q-layout>
@@ -217,7 +227,7 @@
 
 <script>
 import { defineComponent, ref, computed, watch, onUnmounted } from 'vue'
-import { useRouter } from 'vue-router' // Import the router instance
+import { useRouter, useRoute } from 'vue-router' // Import the router and route instances
 import { useQuasar } from 'quasar'
 import { useAuth, fetchCurrentUser, fetchOrganizations, setSelectedOrganization } from '../services/auth.js'
 import { useI18n } from 'vue-i18n'
@@ -237,10 +247,22 @@ export default defineComponent({
     const router = useRouter()
     const $q = useQuasar()
 
-    // fetch current user and orgs
+    // fetch current user and orgs, unless this is the public invite accept page
     const auth = useAuth()
-    fetchCurrentUser()
-    fetchOrganizations()
+    const route = useRoute()
+    const isInviteAccept = computed(() => {
+      try {
+        // If the URL hash contains /invite/accept, treat as invite accept page (covers hash/history modes)
+        if (typeof window !== 'undefined' && window.location && String(window.location.hash || '').includes('/invite/accept')) return true
+        return route && route.name === 'invite-accept'
+      } catch (e) {
+        return false
+      }
+    })
+    if (!isInviteAccept.value) {
+      fetchCurrentUser()
+      fetchOrganizations()
+    }
 
     const { t } = useI18n()
 
@@ -410,6 +432,7 @@ export default defineComponent({
         leftDrawerOpen.value = !leftDrawerOpen.value
       },
       logout,
+      isInviteAccept,
       isAdminVisible,
       orgOptions,
       selectedOrg,

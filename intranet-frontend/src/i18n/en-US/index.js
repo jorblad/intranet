@@ -37,9 +37,23 @@ export default {
     deleted: 'User deleted',
     delete_failed: 'Failed to delete user'
     ,
+    language: 'Language',
+    email: 'Email',
+    invalid_email: 'Invalid email address',
+    invite_user: 'Invite user',
+    invite_sent: 'Invitation sent',
+    invite_failed: 'Failed to send invitation',
+    organization: 'Organization',
+    role: 'Role',
+    add_assignment: 'Add assignment',
+    send_email: 'Send invitation email',
+    send_reset_link: 'Send reset link',
+    reset_link_sent: 'Reset link sent',
+    reset_link_failed: 'Failed to send reset link',
     copy_close: 'Copy & Close',
     copy_success: 'Password copied',
     reset_confirm: 'Reset password for {name}? This will generate a new password.',
+    delete_confirm: 'Delete user {name}?',
   },
   adminAssignments: {
     user: 'User',
@@ -74,6 +88,7 @@ export default {
     roles: 'Roles',
     permissions: 'Permissions',
     orgs: 'Organizations',
+    settings: 'Settings',
     logout: 'Log out',
     messages: 'Messages',
   },
@@ -125,7 +140,12 @@ export default {
     username: 'Username',
     password: 'Password',
     submit: 'Log in',
-    bad_credentials: 'Invalid username or password'
+    bad_credentials: 'Invalid username or password',
+    sign_in: 'Sign in to your account',
+    forgot_password: 'Forgot password?',
+    forgot_title: 'Forgot your password?',
+    forgot_help: 'Enter your username or email to receive a reset link.',
+    reset_sent_notice: 'If an account exists we will send a password reset email.'
   },
   error: {
     '404_message': 'Oops. Nothing here...',
@@ -221,6 +241,47 @@ export default {
       until: 'Until {date}'
     }
   },
+  adminSettings: {
+    title: 'Admin Settings',
+    mailjet_api_key: 'Mailjet API Key',
+    mailjet_api_secret: 'Mailjet API Secret',
+    mailjet_sender: 'Mailjet Sender Email',
+    default_user_language: 'Default user language',
+    frontend_base_url: 'Frontend base URL',
+    frontend_base_help: 'Provide the full frontend URL (including https://). Invite links are constructed as {frontend_base_url}/invite/accept?token=...',
+    invite_language_select: 'Invite template language',
+    invite_subject: 'Invite email subject',
+    invite_html: 'Invite email (HTML)',
+    invite_text: 'Invite email (plain text)',
+    invite_help: 'Use {link} in the template where the invite URL should appear. You can also reference {username} and {display} in templates (e.g. "Your username is {username}"). For HTML templates you can include: <a href="{link}">this link</a>.',
+    save_success: 'Settings saved',
+    save_failed: 'Failed to save settings',
+    load_failed: 'Failed to load settings',
+    invalid_email: 'Invalid email address',
+    mailjet_require_all: 'If you provide Mailjet settings you must provide key, secret and sender.',
+    secret_hidden: 'Hidden (superadmins only)',
+    configured: 'Configured',
+    reveal_secret: 'Reveal secret',
+    hide_secret: 'Hide secret',
+    edit_super_only: 'Only superadmins may edit these settings',
+    invalid_language: 'Selected language is not available'
+    ,
+    test_email_label: 'Test recipient email',
+    test_email_placeholder: 'you at example.com',
+    test_send: 'Send test email',
+    test_send_success: 'Test email sent',
+    test_send_failed: 'Failed to send test email'
+    ,
+    password_reset_language_select: 'Password reset template language',
+    password_reset_subject: 'Password reset email subject',
+    password_reset_html: 'Password reset email (HTML)',
+    password_reset_text: 'Password reset email (plain text)',
+    password_reset_help: 'Use {link} in the template where the reset URL should appear. You can also reference {username} and {display} in templates.'
+    ,
+    test_send_reset: 'Send test reset email',
+    test_send_reset_success: 'Test reset email sent',
+    test_send_reset_failed: 'Failed to send test reset email'
+  },
   dateTimePicker: {
     label: 'Date & time',
     set: 'Set'
@@ -305,6 +366,11 @@ export default {
   resources: {
     activity: 'Activity',
     schedule: 'Schedule'
+  }
+  ,
+  languages: {
+    'en-US': 'English (US)',
+    'sv-SE': 'Svenska'
   }
 }
 

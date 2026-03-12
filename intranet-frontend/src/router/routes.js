@@ -67,6 +67,14 @@ const routes = [
     meta: { requiresAuth: true, requiresAdmin: true }
   },
   {
+    path: '/admin/settings',
+    component: () => import('layouts/MainLayout.vue'),
+    children: [
+      { path: '', component: () => import('pages/AdminSettings.vue'), name: 'admin-settings' }
+    ],
+    meta: { requiresAuth: true, requiresAdmin: true }
+  },
+  {
     path: '/schedules',
     component: () => import('layouts/MainLayout.vue'),
     children: [
@@ -85,6 +93,13 @@ const routes = [
   {
     path: '/login',
     component: Login // Use your Login component
+  },
+  {
+    path: '/invite/accept',
+    component: () => import('layouts/MainLayout.vue'),
+    children: [
+      { path: '', component: () => import('pages/InviteAccept.vue'), name: 'invite-accept' }
+    ]
   },
   // Always leave this as last one,
   // but you can also remove it

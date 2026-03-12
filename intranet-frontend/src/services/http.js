@@ -42,7 +42,12 @@ export function setupInterceptors({ refreshEndpoint = '/oauth/token' } = {}) {
             localStorage.removeItem('refresh_token')
           } catch (e) {}
           if (typeof window !== 'undefined') {
-            window.location.href = '/login'
+            try {
+              const hash = String(window.location.hash || '')
+              if (!hash.includes('/invite/accept')) {
+                window.location.href = '/login'
+              }
+            } catch (e) {}
           }
           return Promise.reject(error)
         }
@@ -68,7 +73,12 @@ export function setupInterceptors({ refreshEndpoint = '/oauth/token' } = {}) {
               localStorage.removeItem('refresh_token')
             } catch (e) {}
             if (typeof window !== 'undefined') {
-              window.location.href = '/login'
+              try {
+                const hash = String(window.location.hash || '')
+                if (!hash.includes('/invite/accept')) {
+                  window.location.href = '/login'
+                }
+              } catch (e) {}
             }
             throw err
           }).finally(() => {

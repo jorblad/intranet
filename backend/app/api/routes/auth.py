@@ -61,8 +61,18 @@ def issue_token(
             .filter(RefreshToken.token == refresh_token)
             .first()
         )
-        if not token_row or token_row.expires_at < datetime.now(timezone.utc):
+        if not token_row:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Refresh token expired")
+
+        # Normalize stored expires_at to timezone-aware UTC before comparing.
+        expires_at = getattr(token_row, 'expires_at', None)
+        if expires_at is not None:
+            if getattr(expires_at, 'tzinfo', None) is None:
+                expires_at = expires_at.replace(tzinfo=timezone.utc)
+            else:
+                expires_at = expires_at.astimezone(timezone.utc)
+            if expires_at < datetime.now(timezone.utc):
+                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Refresh token expired")
 
         user = get_user_by_id(db, token_row.user_id)
         if not user:

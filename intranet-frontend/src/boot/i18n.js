@@ -3,11 +3,21 @@ import { createI18n } from 'vue-i18n'
 import { watch } from 'vue'
 import messages from 'src/i18n'
 import { useAuth } from 'src/services/auth'
+import axios from 'axios'
 
-export default boot(({ app }) => {
-  // choose initial locale from localStorage or navigator
-  const initial = (typeof localStorage !== 'undefined' && localStorage.getItem('locale')) || (navigator && navigator.language) || 'en-US'
-  const locale = messages[initial] ? initial : (initial.startsWith('sv') ? 'sv-SE' : 'en-US')
+export default boot(async ({ app }) => {
+  // Try server-provided default language for unauthenticated pages (login)
+  let serverDefault = null
+  try {
+    const res = await axios.get('/api/public/settings')
+    serverDefault = res?.data?.data?.default_user_language || res?.data?.data?.invite_default_language || null
+  } catch (e) {
+    // ignore network / 404 errors
+  }
+
+  // choose initial locale from localStorage, server default, or navigator
+  const initial = (typeof localStorage !== 'undefined' && localStorage.getItem('locale')) || serverDefault || (navigator && navigator.language) || 'en-US'
+  const locale = messages[initial] ? initial : (initial && initial.startsWith && initial.startsWith('sv') ? 'sv-SE' : 'en-US')
 
   const i18n = createI18n({
     locale,
