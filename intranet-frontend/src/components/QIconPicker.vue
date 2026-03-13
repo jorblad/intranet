@@ -103,7 +103,6 @@ export default defineComponent({
         try {
           const resp = await fetch(metaUrl)
           if (!resp || !resp.ok) continue
-          console.log('[QIconPicker] loaded metadata from', metaUrl)
           data = await resp.json()
           break
         } catch (e) {
