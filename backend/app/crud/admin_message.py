@@ -57,8 +57,9 @@ def list_admin_messages_for_org(db: Session, organization_id: str | None = None,
 
 def update_admin_message(db: Session, msg: AdminMessage, **kwargs):
     for k, v in kwargs.items():
-        # allow setting icon to empty string explicitly; treat None as no-op
-        if hasattr(msg, k) and v is not None:
+        # Apply all provided values, including None, so explicit nulls clear fields.
+        # Callers should use exclude_unset (e.g. on Pydantic models) to avoid overwriting with missing fields.
+        if hasattr(msg, k):
             setattr(msg, k, v)
     db.add(msg)
     db.commit()
