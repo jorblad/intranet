@@ -51,7 +51,14 @@ const tokenValid = ref(true)
 const debugInfo = ref(null)
 
 onMounted(() => {
-  token.value = route.query.token || ''
+  const rawToken = route.query.token
+  if (Array.isArray(rawToken)) {
+    token.value = rawToken[0] || ''
+  } else if (typeof rawToken === 'string') {
+    token.value = rawToken
+  } else {
+    token.value = ''
+  }
   // fallback: if router query is empty (hash-mode routing or normalization issues),
   // try to read token from the URL hash manually
   if (!token.value && typeof window !== 'undefined') {
