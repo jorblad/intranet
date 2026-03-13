@@ -6,10 +6,13 @@ Covers:
   (3) org_admin can manage org-scoped messages only
   (4) global org_admin / superadmin can manage global messages
   (5) start/end active-window filtering and placement filtering
+  (6) pubsub publish payload shape for create / update / delete
 """
+import json
 import uuid
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
+from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -467,5 +470,96 @@ def test_inactive_filter_returns_all_messages_including_future(client, test_db):
         titles = [m["title"] for m in res.json()]
         assert "Active" in titles
         assert "Future" in titles
+    finally:
+        _clear_user()
+
+
+# ── (6) pubsub publish payload shape ─────────────────────────────────────────
+
+def test_create_publishes_envelope_with_correct_shape(client, test_db):
+    _as_user(_make_superadmin_user())
+    try:
+        with patch("app.api.routes.admin_messages._pubsub") as mock_pubsub:
+            res = client.post(
+                "/api/admin/messages",
+                json={"title": "PubSub Test", "placement": "banner", "priority": 5},
+            )
+            assert res.status_code == 201
+            assert mock_pubsub.schedule_publish.called
+
+        envelope = json.loads(mock_pubsub.schedule_publish.call_args[0][0])
+        assert "__origin_pid" in envelope
+        payload = envelope["payload"]
+        assert payload["type"] == "admin_message"
+        assert payload["action"] == "create"
+        msg = payload["message"]
+        assert "id" in msg
+        assert msg["title"] == "PubSub Test"
+        assert "organization_id" in msg
+        assert "placement" in msg
+        assert "priority" in msg
+        assert "created_at" in msg
+    finally:
+        _clear_user()
+
+
+def test_update_publishes_envelope_with_correct_shape(client, test_db):
+    msg_id = _seed_message(test_db, title="Original")
+    _as_user(_make_superadmin_user())
+    try:
+        with patch("app.api.routes.admin_messages._pubsub") as mock_pubsub:
+            res = client.patch(
+                f"/api/admin/messages/{msg_id}", json={"title": "Updated Title"}
+            )
+            assert res.status_code == 200
+            assert mock_pubsub.schedule_publish.called
+
+        envelope = json.loads(mock_pubsub.schedule_publish.call_args[0][0])
+        assert "__origin_pid" in envelope
+        payload = envelope["payload"]
+        assert payload["type"] == "admin_message"
+        assert payload["action"] == "update"
+        msg = payload["message"]
+        assert msg["id"] == msg_id
+        assert msg["title"] == "Updated Title"
+        assert "organization_id" in msg
+    finally:
+        _clear_user()
+
+
+def test_delete_publishes_envelope_with_correct_shape(client, test_db):
+    org_id = _seed_org(test_db)
+    msg_id = _seed_message(test_db, org_id=org_id, title="To Delete")
+    _as_user(_make_superadmin_user())
+    try:
+        with patch("app.api.routes.admin_messages._pubsub") as mock_pubsub:
+            res = client.delete(f"/api/admin/messages/{msg_id}")
+            assert res.status_code == 204
+            assert mock_pubsub.schedule_publish.called
+
+        envelope = json.loads(mock_pubsub.schedule_publish.call_args[0][0])
+        assert "__origin_pid" in envelope
+        payload = envelope["payload"]
+        assert payload["type"] == "admin_message"
+        assert payload["action"] == "delete"
+        msg = payload["message"]
+        assert msg["id"] == msg_id
+        assert msg["organization_id"] == org_id
+        assert "placement" in msg
+    finally:
+        _clear_user()
+
+
+def test_delete_global_message_publishes_null_organization_id(client, test_db):
+    msg_id = _seed_message(test_db, org_id=None, title="Global To Delete")
+    _as_user(_make_superadmin_user())
+    try:
+        with patch("app.api.routes.admin_messages._pubsub") as mock_pubsub:
+            res = client.delete(f"/api/admin/messages/{msg_id}")
+            assert res.status_code == 204
+
+        envelope = json.loads(mock_pubsub.schedule_publish.call_args[0][0])
+        payload = envelope["payload"]
+        assert payload["message"]["organization_id"] is None
     finally:
         _clear_user()
