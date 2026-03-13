@@ -237,11 +237,11 @@ export default defineComponent({
       try { if (poll) clearInterval(poll) } catch (e) {}
     })
 
-    const { t, locale } = useI18n()
+    const { t: i18nT, locale } = useI18n()
 
     const placementOptions = [
-      { label: t('adminMessages.placement_frontpage') || 'Front page', value: 'frontpage' },
-      { label: t('adminMessages.placement_banner') || 'Banner', value: 'banner' }
+      { label: i18nT('adminMessages.placement_frontpage') || 'Front page', value: 'frontpage' },
+      { label: i18nT('adminMessages.placement_banner') || 'Banner', value: 'banner' }
     ]
 
     const getPlacementLabel = (p) => {
