@@ -14,6 +14,7 @@ router = APIRouter()
 
 @router.get('/admin/settings')
 def admin_settings(db: Session = Depends(get_db), _user=Depends(get_current_user)):
+    require_superadmin(_user)
     # Return all stored settings (superadmins will see and may change them via PATCH)
     return {"data": list_settings(db)}
 
