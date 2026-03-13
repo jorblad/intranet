@@ -121,6 +121,9 @@ def personal_calendar(
         entries_query = entries_query.filter(
             ScheduleEntry.schedule.has(Schedule.activity_id.in_(activity_id))
         )
+        activity_id_set = {str(a) for a in activity_id}
+    else:
+        activity_id_set = None
     entries = entries_query.all()
     cal_lines = [
         "BEGIN:VCALENDAR",
@@ -144,7 +147,7 @@ def personal_calendar(
                 schedule_activity = getattr(e.schedule, 'activity_id', None)
             except Exception:
                 schedule_activity = None
-            if schedule_activity is None or str(schedule_activity) not in {str(a) for a in activity_id}:
+            if schedule_activity is None or str(schedule_activity) not in activity_id_set:
                 continue
         if user_id in cant_come_ids:
             continue
