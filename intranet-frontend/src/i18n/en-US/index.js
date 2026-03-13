@@ -166,8 +166,7 @@ export default {
     cant_come_label: 'Can\'t come',
     public: 'Public',
     edit: 'Edit',
-    delete: 'Delete'
-  ,
+    delete: 'Delete',
     term: 'Term',
     activity: 'Activity',
     details: 'Details',
@@ -179,11 +178,10 @@ export default {
     start_date_label: 'Start date',
     end_date_label: 'End date (inclusive)',
     frequency_label: 'Frequency',
-    weekdays_label: 'Weekdays'
-    ,
+    weekdays_label: 'Weekdays',
     activity_calendar_url: 'Activity public calendar URL',
     public_calendar_url: 'Public calendar URL'
-  ,
+  },
   termschedules_extras: {
     copy_activity_calendar: 'Copy activity calendar link',
     activity_link_copied: 'Activity calendar link copied',
@@ -191,9 +189,7 @@ export default {
     public_calendar_url: 'Public calendar URL',
     copy_public_calendar: 'Copy public calendar link',
     public_link_copied: 'Public calendar link copied'
-  }
-  }
-  ,
+  },
   common: {
     yes: 'Yes',
     no: 'No',
