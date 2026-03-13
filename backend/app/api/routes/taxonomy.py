@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.api.routes.auth import get_current_user
-from app.core.rbac import require_superadmin
+from app.core.rbac import require_superadmin, is_superadmin, user_assigned_to_org
 from app.crud import (
     create_term,
     delete_term,
@@ -30,7 +30,23 @@ def terms_index(
     db: Session = Depends(get_db),
     _user=Depends(get_current_user),
 ):
-    terms = list_terms(db, organization_id=organization_id)
+    # If an organization_id filter is provided, ensure the requester may view that org
+    if organization_id is not None:
+        if not (is_superadmin(_user) or user_assigned_to_org(_user, organization_id)):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to view terms for this organization")
+        terms = list_terms(db, organization_id=organization_id)
+    else:
+        # Return only global terms and terms for organizations the user is assigned to (unless superadmin)
+        all_terms = list_terms(db)
+        if is_superadmin(_user):
+            terms = all_terms
+        else:
+            # collect user's org ids
+            from app.crud.organization import list_organizations_for_user
+
+            assigned = {str(o.id) for o in list_organizations_for_user(db, _user.id)}
+            terms = [t for t in all_terms if (t.organization_id is None) or (str(t.organization_id) in assigned)]
+
     return {
         "data": [
             {
@@ -50,6 +66,9 @@ def terms_detail(
     term = get_term(db, term_id)
     if not term:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Term not found")
+    if getattr(term, 'organization_id', None):
+        if not (is_superadmin(_user) or user_assigned_to_org(_user, term.organization_id)):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to view this term")
     return {
         "data": {
             "id": term.id,
@@ -126,7 +145,21 @@ def activities_index(
     db: Session = Depends(get_db),
     _user=Depends(get_current_user),
 ):
-    acts = list_activities(db, organization_id=organization_id)
+    # If org filter provided, ensure user may view that org
+    if organization_id is not None:
+        if not (is_superadmin(_user) or user_assigned_to_org(_user, organization_id)):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to view activities for this organization")
+        acts = list_activities(db, organization_id=organization_id)
+    else:
+        all_acts = list_activities(db)
+        if is_superadmin(_user):
+            acts = all_acts
+        else:
+            from app.crud.organization import list_organizations_for_user
+
+            assigned = {str(o.id) for o in list_organizations_for_user(db, _user.id)}
+            acts = [a for a in all_acts if (a.organization_id is None) or (str(a.organization_id) in assigned)]
+
     return {
         "data": [
             {"id": a.id, "type": "activity", "attributes": {"name": a.name, "organization_id": a.organization_id, "default_start_time": a.default_start_time.isoformat() if a.default_start_time else None, "default_end_time": a.default_end_time.isoformat() if a.default_end_time else None}}
@@ -137,8 +170,15 @@ def activities_index(
 
 @router.post("/activities", status_code=status.HTTP_201_CREATED)
 def activities_create(payload: dict, db: Session = Depends(get_db), _user=Depends(get_current_user)):
-    # require superadmin to create activities
-    require_superadmin(_user)
+    # Allow users assigned to the organization to create activities for that org;
+    # creating a global (no organization) activity requires superadmin.
+    org_id = payload.get("organization_id")
+    from app.core.rbac import is_superadmin, user_assigned_to_org
+    if org_id is None:
+        require_superadmin(_user)
+    else:
+        if not (is_superadmin(_user) or user_assigned_to_org(_user, org_id)):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to create activity for this organization")
     name = payload.get("name")
     org_id = payload.get("organization_id")
     # parse optional default times (expecting HH:MM or HH:MM:SS strings)
@@ -173,6 +213,9 @@ def activities_detail(
     act = get_activity(db, activity_id)
     if not act:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Activity not found")
+    if getattr(act, 'organization_id', None):
+        if not (is_superadmin(_user) or user_assigned_to_org(_user, act.organization_id)):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to view this activity")
     return {
         "data": {
             "id": act.id,

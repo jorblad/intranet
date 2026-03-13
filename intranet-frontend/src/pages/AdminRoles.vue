@@ -341,7 +341,7 @@ async function applyPresetToSelectedActivities(preset) {
     await axios.post(`/api/rbac/roles/${currentRole.value.id}/apply-program-preset`, { preset, resource_ids: selectedActivityIds.value, resource_type: 'activity' })
     $q.notify({ type: 'positive', message: t('admin.roles.applied_preset_to_selected_activities') })
     const rr = await axios.get(`/api/rbac/roles/${currentRole.value.id}/permission-resources`)
-    roleResources.value = rr.data || []
+    roleResources.value = rr.data?.data || rr.data || []
   } catch (err) {
     $q.notify({ type: 'negative', message: err.response?.data?.detail || t('admin.roles.failed_apply_preset_selected_activities') })
   }
@@ -358,7 +358,7 @@ async function applyPresetToSelectedSchedules(preset) {
     await axios.post(`/api/rbac/roles/${currentRole.value.id}/apply-program-preset`, { preset, resource_ids: selectedScheduleIds.value, resource_type: 'schedule' })
     $q.notify({ type: 'positive', message: t('admin.roles.applied_preset_to_selected_schedules') })
     const rr = await axios.get(`/api/rbac/roles/${currentRole.value.id}/permission-resources`)
-    roleResources.value = rr.data || []
+    roleResources.value = rr.data?.data || rr.data || []
   } catch (err) {
     $q.notify({ type: 'negative', message: err.response?.data?.detail || t('admin.roles.failed_apply_preset_selected_schedules') })
   }
@@ -471,7 +471,7 @@ async function applyPresetToAllResources(preset) {
 async function load() {
   try {
     const res = await axios.get('/api/rbac/roles')
-    roles.value = res.data
+    roles.value = res.data?.data || res.data || []
   } catch (err) {
     $q.notify({ type: 'negative', message: t('admin.roles.failed_load_roles') })
   }

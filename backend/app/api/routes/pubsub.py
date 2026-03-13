@@ -19,6 +19,8 @@ class PubSub:
         # indicates whether we've successfully started a subscribe/listen path
         self._valkey_subscribed = False
         self._valkey_task: Optional[asyncio.Task] = None
+        # whether we own the loop (we created it and started it in a background thread)
+        self._loop_owner: bool = False
 
         # try to import valkey dynamically; if not available we'll stay in local mode
         try:
@@ -122,22 +124,76 @@ class PubSub:
             if client is not None:
                 self._valkey_client = client
                 self._valkey_usable = True
+                # remember the loop we used to start the valkey subscribe task
+                self._loop = None
+                # Try to use the current running loop. If none exists (common during
+                # module import / test collection), create a dedicated loop running
+                # in a background thread and schedule the subscribe coroutine there.
+                try:
+                    cur_loop = asyncio.get_running_loop()
+                    self._loop = cur_loop
+                    # schedule task on the current loop
+                    self._valkey_task = cur_loop.create_task(self._valkey_subscribe_loop())
+                except RuntimeError:
+                    # no running loop in this thread; create one and run it in a daemon thread
+                    self._loop = asyncio.new_event_loop()
+                    def _start_loop(loop):
+                        try:
+                            asyncio.set_event_loop(loop)
+                            loop.run_forever()
+                        except Exception:
+                            logger.exception("PubSub: background loop exited unexpectedly")
+
+                    t = threading.Thread(target=_start_loop, args=(self._loop,), daemon=True)
+                    t.start()
+                    self._loop_owner = True
+                    # schedule coroutine onto the background loop in a thread-safe way
+                    self._valkey_task = asyncio.run_coroutine_threadsafe(self._valkey_subscribe_loop(), self._loop)
                 # surface client type for diagnostics
                 try:
                     client_repr = f"{type(client).__module__}.{type(client).__name__}"
                 except Exception:
                     client_repr = repr(client)
                 logger.info("PubSub: valkey client initialized (%s); using valkey for pub/sub", client_repr)
-                # start background subscription task
-                # start background subscription task (subscribe loop will mark _valkey_subscribed)
-                loop = asyncio.get_event_loop()
-                self._valkey_task = loop.create_task(self._valkey_subscribe_loop())
+                # if we scheduled a task above, _valkey_task is set; otherwise it's left None
             else:
                 self._valkey_usable = False
                 logger.warning("PubSub: valkey package found but no usable client; falling back to local pubsub")
         except ModuleNotFoundError:
             self._valkey_usable = False
             logger.info("PubSub: valkey not installed; using local in-process pubsub")
+
+    def schedule_publish(self, message: str):
+        """Schedule a publish from non-async/synchronous code (thread-safe).
+
+        Uses the event loop that was active when PubSub initialized (if available)
+        via `asyncio.run_coroutine_threadsafe`. Falls back to creating a task
+        on the currently running loop if possible.
+        """
+        # Prefer run_coroutine_threadsafe when we have a known loop
+        try:
+            loop = getattr(self, "_loop", None)
+            if loop is not None:
+                try:
+                    asyncio.run_coroutine_threadsafe(self.publish(message), loop)
+                    return True
+                except Exception:
+                    pass
+            # fallback: try scheduling on current running loop
+            try:
+                cur = asyncio.get_running_loop()
+                cur.create_task(self.publish(message))
+                return True
+            except Exception:
+                pass
+        except Exception:
+            pass
+        # Last resort: run synchronously (blocking) to ensure publish happens
+        try:
+            asyncio.run(self.publish(message))
+            return True
+        except Exception:
+            return False
 
     async def _valkey_subscribe_loop(self):
         """Best-effort subscription loop for valkey client. Calls registered handlers when messages arrive.
@@ -244,21 +300,24 @@ class PubSub:
                     # for the valkey echo. The forwarder will ignore valkey-echoed
                     # messages originating from this pid to avoid duplicates.
                     logger.info("PubSub: valkey publish succeeded; calling local handlers")
-                    # if the published message is an envelope with an inner payload,
-                    # unwrap it before calling local handlers so the local forwarder
-                    # (which ignores messages originating from this pid) will still
-                    # forward the inner payload to connected websockets.
+                    # If the published message is an envelope with an inner payload,
+                    # call local handlers with the inner payload (not the envelope)
+                    # so in-process websocket clients receive the useful payload
+                    # immediately. Remote processes will still receive the full
+                    # envelope from valkey and will forward the payload as usual.
                     try:
-                        parsed_msg = None
-                        if isinstance(message, str):
-                            parsed_msg = __import__('json').loads(message)
-                        if isinstance(parsed_msg, dict) and parsed_msg.get('__origin_pid') is not None and 'payload' in parsed_msg:
-                            inner = parsed_msg.get('payload')
-                            await self._call_handlers(__import__('json').dumps(inner))
+                        parsed = None
+                        try:
+                            parsed = json.loads(message)
+                        except Exception:
+                            parsed = None
+                        if isinstance(parsed, dict) and parsed.get('__origin_pid') is not None and 'payload' in parsed:
+                            payload_text = json.dumps(parsed.get('payload'))
+                            await self._call_handlers(payload_text)
                         else:
                             await self._call_handlers(message)
                     except Exception:
-                        # fallback to calling handlers with raw message
+                        # best-effort: fall back to delivering the raw message
                         await self._call_handlers(message)
                     return
                 # try common alternative
@@ -268,12 +327,14 @@ class PubSub:
                         await maybe
                     logger.info("PubSub: valkey put succeeded; calling local handlers")
                     try:
-                        parsed_msg = None
-                        if isinstance(message, str):
-                            parsed_msg = __import__('json').loads(message)
-                        if isinstance(parsed_msg, dict) and parsed_msg.get('__origin_pid') is not None and 'payload' in parsed_msg:
-                            inner = parsed_msg.get('payload')
-                            await self._call_handlers(__import__('json').dumps(inner))
+                        parsed = None
+                        try:
+                            parsed = json.loads(message)
+                        except Exception:
+                            parsed = None
+                        if isinstance(parsed, dict) and parsed.get('__origin_pid') is not None and 'payload' in parsed:
+                            payload_text = json.dumps(parsed.get('payload'))
+                            await self._call_handlers(payload_text)
                         else:
                             await self._call_handlers(message)
                     except Exception:
@@ -289,16 +350,21 @@ class PubSub:
         # receives the inner payload (important when valkey isn't available).
         logger.info("PubSub: publishing via local handlers (count=%d)", len(self._handlers))
         try:
+            # When valkey isn't available we still want local websocket
+            # clients to receive the actionable payload. If the message is
+            # an envelope, deliver the inner payload locally; otherwise
+            # deliver the raw message.
             parsed = None
-            if isinstance(message, str):
+            try:
                 parsed = json.loads(message)
+            except Exception:
+                parsed = None
             if isinstance(parsed, dict) and parsed.get('__origin_pid') is not None and 'payload' in parsed:
-                inner = parsed.get('payload')
-                await self._call_handlers(json.dumps(inner))
+                await self._call_handlers(json.dumps(parsed.get('payload')))
             else:
                 await self._call_handlers(message)
         except Exception:
-            # fallback to raw message if parsing/unwrapping fails
+            # fallback to raw message if anything goes wrong
             await self._call_handlers(message)
 
     def register_handler(self, handler: Callable[[str], None]):
@@ -309,8 +375,27 @@ class PubSub:
 
     async def close(self):
         if self._valkey_task:
-            self._valkey_task.cancel()
             try:
-                await self._valkey_task
+                # If the task is an asyncio.Task scheduled on the current loop, cancel and await it.
+                if isinstance(self._valkey_task, asyncio.Task):
+                    self._valkey_task.cancel()
+                    try:
+                        await self._valkey_task
+                    except Exception:
+                        pass
+                else:
+                    # Assume a concurrent.futures.Future returned by run_coroutine_threadsafe.
+                    try:
+                        self._valkey_task.cancel()
+                    except Exception:
+                        pass
             except Exception:
-                pass
+                logger.exception("PubSub: error while closing valkey task")
+        # If we created a dedicated loop in a background thread, stop it.
+        if getattr(self, "_loop_owner", False) and getattr(self, "_loop", None):
+            try:
+                loop = self._loop
+                if loop.is_running():
+                    loop.call_soon_threadsafe(loop.stop)
+            except Exception:
+                logger.exception("PubSub: failed to stop background loop")

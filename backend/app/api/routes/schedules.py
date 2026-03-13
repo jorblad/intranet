@@ -4,6 +4,15 @@ from sqlalchemy.orm import Session
 from app.api.routes.auth import get_current_user
 from app.core.rbac import require_org_admin_or_superadmin
 from app.core.rbac import require_superadmin
+from app.core.rbac import user_assigned_to_org, is_superadmin
+from app.models import Schedule
+
+# TestClient-based route tests for schedules/entries bulk APIs
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+import sys
+import types
+from types import SimpleNamespace
 from app.crud import (
     create_entry,
     create_schedule,
@@ -17,8 +26,16 @@ from app.crud import (
     update_schedule,
 )
 from app.db.session import get_db
-from app.schemas.entry import EntryCreate, EntryUpdate
+from app.schemas.entry import EntryCreate, EntryUpdate, EntryBulkUpdate
+from typing import List
+from app.schemas.entry import EntryBase
 from app.schemas.schedule import ScheduleCreate, ScheduleUpdate
+import asyncio
+import json
+import os
+
+# reuse the ws pubsub instance so published messages are forwarded to connected websockets
+from app.api.routes.ws import _pubsub
 
 router = APIRouter()
 
@@ -44,10 +61,31 @@ def _entry_to_dict(entry):
 def schedules_index(
     activity_id: str | None = None,
     term_id: str | None = None,
+    organization_id: str | None = None,
     db: Session = Depends(get_db),
     _user=Depends(get_current_user),
 ):
-    schedules = list_schedules(db, activity_id=activity_id, term_id=term_id)
+    # If an organization filter is provided, ensure the user belongs to that org or is superadmin
+    # (frontend passes organization via query in some cases)
+    org_id = None
+    # try to read organization_id from query params via request (FastAPI already maps explicit param, so check function signature)
+    # list_schedules supports organization_id but the route doesn't expose it; respect activity_id/term_id filters only.
+    # If org filter provided, ensure the requester may view that org
+    if organization_id is not None:
+        if not (is_superadmin(_user) or user_assigned_to_org(_user, organization_id)):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to view schedules for this organization")
+        schedules = list_schedules(db, activity_id=activity_id, term_id=term_id, organization_id=organization_id)
+    else:
+        all_scheds = list_schedules(db, activity_id=activity_id, term_id=term_id)
+        if is_superadmin(_user):
+            schedules = all_scheds
+        else:
+            # only include global schedules or those in user's orgs
+            from app.crud.organization import list_organizations_for_user
+
+            assigned = {str(o.id) for o in list_organizations_for_user(db, _user.id)}
+            schedules = [s for s in all_scheds if (s.organization_id is None) or (str(s.organization_id) in assigned)]
+
     return {
         "data": [
             {
@@ -55,6 +93,7 @@ def schedules_index(
                 "name": schedule.name,
                 "term_id": schedule.term_id,
                 "activity_id": schedule.activity_id,
+                "organization_id": getattr(schedule, 'organization_id', None),
             }
             for schedule in schedules
         ]
@@ -67,14 +106,61 @@ def schedules_create(
     db: Session = Depends(get_db),
     _user=Depends(get_current_user),
 ):
-    require_superadmin(_user)
-    schedule = create_schedule(db, payload.name, payload.term_id, payload.activity_id)
+    # Require an explicit organization_id for new schedules. If the requester
+    # is assigned to exactly one organization and did not provide one, default
+    # to that org. Superadmins or users with multiple orgs must provide
+    # `organization_id` in the payload; creating a global (null) schedule is
+    # disallowed for all users.
+    org_id = getattr(payload, "organization_id", None)
+    try:
+        from app.crud.organization import list_organizations_for_user
+
+        assigned = list_organizations_for_user(db, _user.id)
+    except Exception:
+        assigned = []
+
+    if org_id is None:
+        # default to single assigned org if available
+        if len(assigned) == 1:
+            org_id = str(assigned[0].id)
+        else:
+            # require explicit org when user has multiple orgs or is superadmin
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="organization_id is required")
+
+    # Verify the requester may create schedules for this organization
+    if not (is_superadmin(_user) or user_assigned_to_org(_user, org_id)):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to create schedule for this organization")
+
+    # Avoid creating duplicate schedules when clients race: if a schedule
+    # with the same name/activity/term/organization already exists, return it.
+    org_val = org_id
+    q = db.query(Schedule).filter(Schedule.name == payload.name)
+    q = q.filter(Schedule.term_id == payload.term_id)
+    q = q.filter(Schedule.activity_id == payload.activity_id)
+    if org_val is not None:
+        q = q.filter(Schedule.organization_id == org_val)
+    else:
+        q = q.filter(Schedule.organization_id.is_(None))
+    existing = q.first()
+    if existing:
+        schedule = existing
+    else:
+        try:
+            schedule = create_schedule(
+                db, payload.name, payload.term_id, payload.activity_id, org_val
+            )
+        except Exception as e:
+            # Log the exception for debugging and return a 500 with a concise message
+            import traceback
+            traceback.print_exc()
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
     return {
         "data": {
             "id": schedule.id,
             "name": schedule.name,
             "term_id": schedule.term_id,
             "activity_id": schedule.activity_id,
+            "organization_id": getattr(schedule, 'organization_id', None),
         }
     }
 
@@ -88,12 +174,18 @@ def schedules_detail(
     schedule = get_schedule(db, schedule_id)
     if not schedule:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Schedule not found")
+    # Enforce organization membership for schedule visibility
+    if getattr(schedule, 'organization_id', None):
+        if not (is_superadmin(_user) or user_assigned_to_org(_user, schedule.organization_id)):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to view this schedule")
+
     return {
         "data": {
             "id": schedule.id,
             "name": schedule.name,
             "term_id": schedule.term_id,
             "activity_id": schedule.activity_id,
+            "organization_id": getattr(schedule, 'organization_id', None),
         }
     }
 
@@ -108,7 +200,13 @@ def schedules_update(
     schedule = get_schedule(db, schedule_id)
     if not schedule:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Schedule not found")
-    require_superadmin(_user)
+    # Require org admin for the schedule's organization; if schedule is global require superadmin
+    org = getattr(schedule, "organization_id", None)
+    if org is None:
+        require_superadmin(_user)
+    else:
+        require_org_admin_or_superadmin(_user, org)
+
     schedule = update_schedule(db, schedule, payload.name, payload.term_id, payload.activity_id)
     return {
         "data": {
@@ -116,6 +214,7 @@ def schedules_update(
             "name": schedule.name,
             "term_id": schedule.term_id,
             "activity_id": schedule.activity_id,
+            "organization_id": getattr(schedule, 'organization_id', None),
         }
     }
 
@@ -129,7 +228,12 @@ def schedules_delete(
     schedule = get_schedule(db, schedule_id)
     if not schedule:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Schedule not found")
-    require_superadmin(_user)
+    org = getattr(schedule, "organization_id", None)
+    if org is None:
+        require_superadmin(_user)
+    else:
+        require_org_admin_or_superadmin(_user, org)
+
     delete_schedule(db, schedule)
     return None
 
@@ -140,6 +244,13 @@ def entries_index(
     db: Session = Depends(get_db),
     _user=Depends(get_current_user),
 ):
+    schedule = get_schedule(db, schedule_id)
+    if not schedule:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Schedule not found")
+    if getattr(schedule, 'organization_id', None):
+        if not (is_superadmin(_user) or user_assigned_to_org(_user, schedule.organization_id)):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to view entries for this schedule")
+
     entries = list_entries(db, schedule_id)
     return {"data": [_entry_to_dict(entry) for entry in entries]}
 
@@ -154,7 +265,13 @@ def entries_create(
     schedule = get_schedule(db, schedule_id)
     if not schedule:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Schedule not found")
-    require_superadmin(_user)
+    # Allow any user assigned to the schedule's organization to create entries.
+    org = getattr(schedule, "organization_id", None)
+    if org is None:
+        require_superadmin(_user)
+    else:
+        if not (is_superadmin(_user) or user_assigned_to_org(_user, org)):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to create entries for this schedule")
     entry = create_entry(
         db,
         schedule_id,
@@ -172,6 +289,244 @@ def entries_create(
     return {"data": _entry_to_dict(entry)}
 
 
+@router.patch("/schedules/{schedule_id}/entries/bulk", status_code=status.HTTP_200_OK)
+def entries_bulk_update(
+    schedule_id: str,
+    payload: List[EntryBulkUpdate],
+    db: Session = Depends(get_db),
+    _user=Depends(get_current_user),
+):
+    schedule = get_schedule(db, schedule_id)
+    if not schedule:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Schedule not found")
+    org = getattr(schedule, "organization_id", None)
+    if org is None:
+        require_superadmin(_user)
+    else:
+        if not (is_superadmin(_user) or user_assigned_to_org(_user, org)):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to update entries for this schedule")
+
+    try:
+        from app.crud.entry import bulk_update_entries
+        updates = [p.dict(exclude_unset=True) for p in payload]
+        try:
+            print(f"entries_bulk_update: received {len(updates)} updates")
+        except Exception:
+            pass
+        # Filter out client-local placeholder ids (e.g., 'local-...') which are not persisted
+        filtered = []
+        skipped = []
+        for u in updates:
+            eid = u.get('id')
+            if isinstance(eid, str) and eid.startswith('local-'):
+                skipped.append(eid)
+                continue
+            filtered.append(u)
+        try:
+            if skipped:
+                print(f"entries_bulk_update: filtered out {len(skipped)} local placeholder ids: {skipped}")
+        except Exception:
+            pass
+        updated = bulk_update_entries(db, schedule_id, filtered)
+    except ValueError as e:
+        # Validation / client errors (e.g., missing id or invalid ownership) -> 400
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except Exception as e:
+        # Unexpected server error: log full traceback for debugging
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal server error")
+
+    # publish a notification to other connected clients so they can refresh
+    try:
+        # publish rows mapping so the frontend Orbit handler can apply them
+        rows_map = {schedule_id: [_entry_to_dict(e) for e in updated]}
+        transform = {"rows": rows_map}
+        payload = {"type": "transform", "transform": transform}
+        envelope = json.dumps({"__origin_pid": os.getpid(), "payload": payload})
+        try:
+            print(f"entries_bulk_update: scheduling publish envelope (len={len(envelope)}) preview={envelope[:200]}")
+            _pubsub.schedule_publish(envelope)
+        except Exception:
+            pass
+    except Exception:
+        pass
+
+    return {"data": [_entry_to_dict(e) for e in updated]}
+
+
+# --- Embedded route-level tests for entries_bulk_update ---
+# These tests use FastAPI's TestClient to exercise the bulk update endpoint
+# for authorization behavior and payload handling semantics.
+
+def _build_test_app():
+    """
+    Construct a minimal FastAPI app including this router for TestClient-based tests.
+    """
+    app = FastAPI()
+    app.include_router(router)
+    return app
+
+
+def _set_fake_bulk_update_entries(fake_func):
+    """
+    Ensure that `from app.crud.entry import bulk_update_entries` inside
+    entries_bulk_update resolves to `fake_func` during tests by populating
+    sys.modules['app.crud.entry'].
+    """
+    # Ensure package structure exists
+    if "app" not in sys.modules:
+        sys.modules["app"] = types.ModuleType("app")
+    if "app.crud" not in sys.modules:
+        crud_mod = types.ModuleType("app.crud")
+        sys.modules["app.crud"] = crud_mod
+    else:
+        crud_mod = sys.modules["app.crud"]
+
+    entry_mod_name = "app.crud.entry"
+    entry_mod = types.ModuleType(entry_mod_name)
+    entry_mod.bulk_update_entries = fake_func
+    sys.modules[entry_mod_name] = entry_mod
+
+
+def _override_schedule_and_rbac(app, schedule_obj, assigned_to_org: bool, superadmin: bool):
+    """
+    Override get_schedule, user_assigned_to_org, and is_superadmin behavior
+    for tests by monkeypatching symbols in this module.
+    """
+    # Override get_schedule by dependency override on get_db combined with local closure.
+    # We patch at module level since get_schedule is imported, not a dependency.
+    global get_schedule, user_assigned_to_org, is_superadmin
+
+    original_get_schedule = get_schedule
+    original_user_assigned_to_org = user_assigned_to_org
+    original_is_superadmin = is_superadmin
+
+    def fake_get_schedule(_db, _schedule_id):
+        return schedule_obj
+
+    def fake_user_assigned_to_org(_user, _org_id):
+        return assigned_to_org
+
+    def fake_is_superadmin(_user):
+        return superadmin
+
+    get_schedule = fake_get_schedule
+    user_assigned_to_org = fake_user_assigned_to_org
+    is_superadmin = fake_is_superadmin
+
+    # Return a restore function so each test can clean up.
+    def restore():
+        global get_schedule, user_assigned_to_org, is_superadmin
+        get_schedule = original_get_schedule
+        user_assigned_to_org = original_user_assigned_to_org
+        is_superadmin = original_is_superadmin
+
+    return restore
+
+
+def _override_dependencies(app, user):
+    """
+    Override get_current_user and get_db for tests to avoid touching real auth/DB.
+    """
+    def fake_get_current_user():
+        return user
+
+    def fake_get_db():
+        class DummyDB:
+            pass
+
+        return DummyDB()
+
+    app.dependency_overrides[get_current_user] = fake_get_current_user
+    app.dependency_overrides[get_db] = fake_get_db
+
+
+def test_entries_bulk_update_forbidden_for_user_not_assigned_to_org():
+    """
+    (1) 403 for users not assigned to the org.
+    """
+    app = _build_test_app()
+    _override_dependencies(app, user={"id": "user-1"})
+
+    # Schedule with an organization; user is not assigned and not superadmin.
+    schedule = SimpleNamespace(id="sched-1", organization_id="org-1")
+    restore = _override_schedule_and_rbac(app, schedule, assigned_to_org=False, superadmin=False)
+
+    # We don't need bulk_update_entries here because the request should be rejected
+    # by authorization before any DB logic executes.
+    client = TestClient(app)
+
+    response = client.patch(
+        f"/schedules/{schedule.id}/entries/bulk",
+        json=[{"id": "entry-1"}],
+    )
+
+    restore()
+
+    assert response.status_code == status.HTTP_403_FORBIDDEN
+    assert response.json().get("detail") == "Not authorized to update entries for this schedule"
+
+
+def test_entries_bulk_update_success_path_updates():
+    """
+    (2) Success path: authorized user gets 200 and updated entries.
+    """
+    app = _build_test_app()
+    _override_dependencies(app, user={"id": "user-2"})
+
+    schedule = SimpleNamespace(id="sched-2", organization_id="org-2")
+    restore = _override_schedule_and_rbac(app, schedule, assigned_to_org=True, superadmin=False)
+
+    def fake_bulk_update_entries(_db, _schedule, payload):
+        # Echo back payload as "updated" entries with an extra field to prove it ran.
+def entries_bulk_create(
+    schedule_id: str,
+    payload: List[EntryCreate],
+    db: Session = Depends(get_db),
+    _user=Depends(get_current_user),
+):
+    schedule = get_schedule(db, schedule_id)
+    if not schedule:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Schedule not found")
+    org = getattr(schedule, "organization_id", None)
+    if org is None:
+        require_superadmin(_user)
+    else:
+        if not (is_superadmin(_user) or user_assigned_to_org(_user, org)):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to create entries for this schedule")
+
+    # normalize payload to list of dicts suitable for bulk create
+    entries_data = []
+    for p in payload:
+        entries_data.append(p.dict())
+
+    try:
+        from app.crud.entry import bulk_create_entries
+
+        created = bulk_create_entries(db, schedule_id, entries_data)
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+    # publish created entries so other clients receive authoritative entries
+    try:
+        rows_map = {schedule_id: [_entry_to_dict(e) for e in created]}
+        transform = {"rows": rows_map}
+        payload = {"type": "transform", "transform": transform}
+        envelope = json.dumps({"__origin_pid": os.getpid(), "payload": payload})
+        try:
+            print(f"entries_bulk_create: scheduling publish envelope (len={len(envelope)}) preview={envelope[:200]}")
+            _pubsub.schedule_publish(envelope)
+        except Exception:
+            pass
+    except Exception:
+        pass
+
+    return {"data": [_entry_to_dict(e) for e in created]}
+
+
 @router.patch("/entries/{entry_id}")
 def entries_update(
     entry_id: str,
@@ -182,7 +537,14 @@ def entries_update(
     entry = get_entry(db, entry_id)
     if not entry:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Entry not found")
-    require_superadmin(_user)
+    # Allow any user assigned to the parent schedule's organization to update entries.
+    schedule = get_schedule(db, entry.schedule_id)
+    org = getattr(schedule, "organization_id", None) if schedule else None
+    if org is None:
+        require_superadmin(_user)
+    else:
+        if not (is_superadmin(_user) or user_assigned_to_org(_user, org)):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to update this entry")
     entry = update_entry(
         db,
         entry,
@@ -209,6 +571,13 @@ def entries_delete(
     entry = get_entry(db, entry_id)
     if not entry:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Entry not found")
-    require_superadmin(_user)
+    schedule = get_schedule(db, entry.schedule_id)
+    org = getattr(schedule, "organization_id", None) if schedule else None
+    if org is None:
+        require_superadmin(_user)
+    else:
+        if not (is_superadmin(_user) or user_assigned_to_org(_user, org)):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to delete this entry")
+
     delete_entry(db, entry)
     return None

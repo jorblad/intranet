@@ -81,6 +81,54 @@ function openDb() {
   })
 }
 
+// fallback persistence for quick unloads/reloads: localStorage is synchronous
+function persistPendingFallback(items) {
+  try {
+    if (typeof localStorage !== 'undefined') {
+      try {
+        const raw = JSON.stringify(items || [])
+        localStorage.setItem('orbit:pending_fallback', raw)
+        try { console.debug('persistPendingFallback: wrote fallback pending length', Array.isArray(items) ? items.length : null) } catch (e) {}
+      } catch (e) { console.warn('persistPendingFallback: localStorage write failed', e) }
+    }
+  } catch (e) {}
+}
+// Helper: generate client-side transform id
+function generateTransformId() {
+  try {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID()
+  } catch (e) {}
+  return `ct-${Date.now()}-${Math.random().toString(36).slice(2,8)}`
+}
+
+// Ensure a pending transform item has deterministic metadata: transformId and lastModified
+function ensureTransformMetadata(item) {
+  try {
+    if (!item || typeof item !== 'object') return item
+    const t = item.transform || (item.item && item.item.transform) || item
+    if (!t || typeof t !== 'object') return item
+    if (!t.transformId) t.transformId = generateTransformId()
+    if (t.entry && typeof t.entry === 'object') {
+      if (!t.entry.lastModified || Number(t.entry.lastModified) === 0) t.entry.lastModified = Date.now()
+    } else {
+      if (!t.lastModified) t.lastModified = Date.now()
+    }
+  } catch (e) {}
+  return item
+}
+
+// Attempt a short best-effort flush of persisted pending items over websocket.
+async function attemptFlushPendingShort(timeoutMs = 800) {
+  try {
+    if (!orbit || !orbit.ws || orbit.ws.readyState !== WebSocket.OPEN) return
+    const q = (await safeIdbGetPending()) || []
+    if (!Array.isArray(q) || q.length === 0) return
+    for (const item of q) {
+      try { ensureTransformMetadata(item) } catch (e) {}
+      try { orbit.ws.send(JSON.stringify(item)); lastSentTs = Date.now() } catch (e) {}
+    }
+  } catch (e) {}
+}
 async function idbGet(scheduleId) {
   try {
     const db = await openDb()
@@ -97,14 +145,52 @@ async function idbGet(scheduleId) {
 async function idbSet(scheduleId, rows) {
   try {
     const db = await openDb()
+    // Ensure the value is structured-cloneable. Use native structuredClone when available,
+    // otherwise fall back to JSON serialization. If both fail, attempt a shallow copy as last resort.
+    let toStore = rows
+    try {
+      if (typeof structuredClone === 'function') toStore = structuredClone(rows)
+      else toStore = JSON.parse(JSON.stringify(rows))
+    } catch (cloneErr) {
+      console.warn('idbSet: failed to clone rows for IndexedDB, attempting deep sanitize', cloneErr)
+      // Deep sanitize: recursively copy plain objects/arrays and drop functions, symbols, and non-enumerable props
+      const sanitize = (v) => {
+        if (v === null || v === undefined) return v
+        const t = typeof v
+        if (t === 'string' || t === 'number' || t === 'boolean') return v
+        if (Array.isArray(v)) return v.map(sanitize)
+        if (t === 'object') {
+          const out = {}
+          try {
+            Object.keys(v).forEach(k => {
+              try {
+                const val = v[k]
+                const vt = typeof val
+                if (vt === 'function' || vt === 'symbol') return
+                out[k] = sanitize(val)
+              } catch (e) {}
+            })
+          } catch (e) {}
+          return out
+        }
+        // fallback: stringify if possible
+        try { return JSON.parse(JSON.stringify(v)) } catch (e) { return String(v) }
+      }
+      try {
+        toStore = Array.isArray(rows) ? rows.map(r => sanitize(r)) : sanitize(rows)
+      } catch (sanErr) {
+        console.warn('idbSet: deep sanitize failed, falling back to shallow copy', sanErr)
+        try { toStore = Array.isArray(rows) ? rows.map(r => Object.assign({}, r)) : Object.assign({}, rows) } catch (shallowErr) { console.warn('idbSet: shallow copy also failed, storing original (may error)', shallowErr); toStore = rows }
+      }
+    }
     return new Promise((resolve, reject) => {
       const tx = db.transaction('orbitSchedules', 'readwrite')
       const store = tx.objectStore('orbitSchedules')
-      const r = store.put(rows, String(scheduleId))
+        const r = store.put(toStore, String(scheduleId))
       r.onsuccess = () => resolve(true)
       r.onerror = () => reject(r.error)
     })
-  } catch (e) { return false }
+  } catch (e) { console.warn('idbSet failed', e); return false }
 }
 
 async function init() {
@@ -145,6 +231,7 @@ async function init() {
           try {
             if (!ev || !ev.key) return
             if (ev.key !== 'orbit:transform') return
+/** storage listener attached above **/
             if (!ev.newValue) return
             let obj = null
             try { obj = JSON.parse(ev.newValue) } catch (e) { console.warn('orbit storage: invalid JSON', e); return }
@@ -180,6 +267,15 @@ async function init() {
         } catch (e) { console.warn('failed to create BroadcastChannel', e) }
       }
     } catch (e) { console.warn('BroadcastChannel setup failed', e) }
+      // ensure pending queue is saved to synchronous fallback on unload/reload
+      try {
+        if (typeof window !== 'undefined' && typeof window.addEventListener === 'function' && !orbit._beforeUnloadAttached) {
+          orbit._beforeUnloadAttached = true
+          window.addEventListener('beforeunload', () => {
+            try { persistPendingFallback(pendingQueue) } catch (e) {}
+          })
+        }
+      } catch (e) {}
     // attach small runtime helpers onto window.__ORBIT
     try {
       if (typeof window !== 'undefined' && window.__ORBIT) {
@@ -197,7 +293,36 @@ async function init() {
           const syncProgress = (orbit && orbit.syncProgress) ? Object.assign({}, orbit.syncProgress) : { total: 0, done: 0 }
           return { connected, crossTabConnected: crossTab, lastSentTs, lastReceivedTs, pendingOps, lastError, syncedOrgs, syncProgress }
         }
-        window.__ORBIT.getPendingQueue = async () => { try { return await idbGetPending() } catch (e) { return pendingQueue.slice() } }
+        window.__ORBIT.getPendingQueue = async () => {
+          try {
+            const persisted = await safeIdbGetPending().catch(() => []) || []
+            const mem = Array.isArray(pendingQueue) ? pendingQueue.slice() : []
+            const out = []
+            const seen = new Set()
+            const extractId = (p) => {
+              try {
+                const t = p && (p.transform || (p.item && p.item.transform) || p)
+                if (!t) return null
+                if (t.transformId) return String(t.transformId)
+                if (t.entry && t.entry.id) return String(t.entry.id)
+              } catch (e) {}
+              try { return JSON.stringify(p) } catch (e) { return null }
+            }
+            for (const p of persisted) {
+              const id = extractId(p)
+              if (id) seen.add(id)
+              out.push(p)
+            }
+            for (const p of mem) {
+              const id = extractId(p)
+              if (!id || !seen.has(id)) {
+                out.push(p)
+                if (id) seen.add(id)
+              }
+            }
+            return out
+          } catch (e) { return pendingQueue.slice() }
+        }
         window.__ORBIT.ws = () => (orbit && orbit.ws)
         window.__ORBIT.__orbit = orbit
         window.__ORBIT.dumpMemory = () => {
@@ -273,23 +398,54 @@ async function connectWebsocket() {
       try { if (typeof window !== 'undefined') window.__ORBIT_WS = ws } catch (e) {}
       try { if (typeof window !== 'undefined') window.__ORBIT_INTERNAL = orbit } catch (e) {}
       const _flushPendingOnOpen = async () => {
-        console.log('Orbit WS onopen debug:', {
-          typeof_safeIdbGetPending: typeof safeIdbGetPending,
-          typeof_safeIdbSetPending: typeof safeIdbSetPending,
-          typeof_ws_send: typeof ws.send,
-        })
+        console.log('Orbit WS onopen debug:', { typeof_safeIdbGetPending: typeof safeIdbGetPending, typeof_safeIdbSetPending: typeof safeIdbSetPending, typeof_ws_send: typeof ws.send })
         try {
           if (typeof safeIdbGetPending !== 'function') {
             console.error('safeIdbGetPending is not a function:', typeof safeIdbGetPending)
             return
           }
-          const queue = await safeIdbGetPending() || []
-          console.log('Orbit WS flush queue value:', typeof queue, Array.isArray(queue) ? queue.length : null)
-          if (!Array.isArray(queue) || queue.length === 0) {
-            // nothing to flush
-            return
-          }
-          for (const item of queue) {
+          // Load persisted pending items and merge with in-memory queue (avoid duplicates)
+          const persisted = await safeIdbGetPending() || []
+          try {
+            if (!Array.isArray(pendingQueue) || pendingQueue.length === 0) {
+              pendingQueue = Array.isArray(persisted) ? persisted.slice() : []
+            } else {
+              const existingIds = new Set()
+              for (const p of pendingQueue) {
+                const t = p && (p.transform || (p.item && p.item.transform))
+                const id = (t && t.entry && t.entry.id) || (t && t.transformId) || null
+                if (id) existingIds.add(String(id))
+              }
+              for (const p of (Array.isArray(persisted) ? persisted : [])) {
+                const t = p && (p.transform || (p.item && p.item.transform))
+                const id = (t && t.entry && t.entry.id) || (t && t.transformId) || null
+                if (!id || !existingIds.has(String(id))) pendingQueue.push(p)
+              }
+            }
+          } catch (e) {}
+          console.log('Orbit WS flush pendingQueue value:', typeof pendingQueue, Array.isArray(pendingQueue) ? pendingQueue.length : null)
+          if (!Array.isArray(pendingQueue) || pendingQueue.length === 0) return
+          // Ensure all pending items have deterministic metadata before sending
+          try {
+            let persistModified = false
+            for (let i = 0; i < pendingQueue.length; i++) {
+              try {
+                const p = pendingQueue[i]
+                const t = p && (p.transform || (p.item && p.item.transform) || p)
+                const hadId = Boolean(t && t.transformId)
+                const hadLm = Boolean(t && t.entry && t.entry.lastModified)
+                ensureTransformMetadata(p)
+                const t2 = p && (p.transform || (p.item && p.item.transform) || p)
+                const hasId = Boolean(t2 && t2.transformId)
+                const hasLm = Boolean(t2 && t2.entry && t2.entry.lastModified)
+                if ((!hadId && hasId) || (!hadLm && hasLm)) persistModified = true
+              } catch (e) {}
+            }
+            if (persistModified) {
+              try { await safeIdbSetPending(pendingQueue) } catch (e) { console.warn('flushOnOpen: failed to persist metadata-updated pending', e) }
+            }
+          } catch (e) {}
+          for (const item of pendingQueue) {
             try {
               console.log('About to send pending item, types:', { typeof_ws_send: typeof ws.send, typeof_JSON_stringify: typeof JSON.stringify })
               if (typeof ws.send !== 'function') {
@@ -314,14 +470,8 @@ async function connectWebsocket() {
               console.warn('Failed to flush pending transform', err)
             }
           }
-          // clear persisted queue after attempting to flush
-          pendingQueue = []
-          pendingOps = 0
-          if (typeof safeIdbSetPending === 'function') {
-            try { await safeIdbSetPending([]) } catch (e) { console.warn('safeIdbSetPending failed', e) }
-          } else {
-            console.error('safeIdbSetPending is not a function:', typeof safeIdbSetPending)
-          }
+          // Do NOT clear persisted pending queue here; wait for server ACKs to remove items individually.
+          pendingOps = Array.isArray(pendingQueue) ? pendingQueue.length : 0
         } catch (e) {
           console.warn('Error flushing pending transforms', e)
         }
@@ -364,10 +514,20 @@ async function connectWebsocket() {
         return
       }
       // update lastReceivedTs for any incoming control/ack/heartbeat
-      if (msg.type === 'heartbeat' || msg.type === 'ack') {
+      if (msg.type === 'heartbeat') {
         lastReceivedTs = Date.now()
-        // if ack received, decrement pendingOps (best-effort)
-        if (msg.type === 'ack' && pendingOps > 0) pendingOps = Math.max(0, pendingOps - 1)
+        return
+      }
+      if (msg.type === 'ack') {
+        lastReceivedTs = Date.now()
+        try {
+          const transformId = msg.transformId || (msg.transform && msg.transform.transformId)
+          if (transformId) {
+            await removePendingByTransformId(transformId)
+          } else {
+            if (pendingOps > 0) pendingOps = Math.max(0, pendingOps - 1)
+          }
+        } catch (e) { console.warn('ack handling failed', e) }
         return
       }
       if (msg.type === 'transform' && msg.transform) {
@@ -404,7 +564,10 @@ async function idbGetPending() {
       const tx = db.transaction('orbitPending', 'readonly')
       const store = tx.objectStore('orbitPending')
       const r = store.get('pending')
-      r.onsuccess = () => resolve(r.result || [])
+      r.onsuccess = () => {
+        try { console.debug('idbGetPending: loaded pending value type=', typeof r.result, 'isArray=', Array.isArray(r.result), 'len=', Array.isArray(r.result) ? r.result.length : null) } catch (e) {}
+        resolve(r.result || [])
+      }
       r.onerror = () => reject(r.error)
     })
   } catch (e) { return [] }
@@ -412,22 +575,98 @@ async function idbGetPending() {
 async function idbSetPending(items) {
   try {
     const db = await openDb()
+    // Clone pending items to ensure compatibility with IndexedDB structured clone algorithm
+    let toStore = items
+    try {
+      if (typeof structuredClone === 'function') toStore = structuredClone(items)
+      else toStore = JSON.parse(JSON.stringify(items))
+    } catch (cloneErr) {
+      console.warn('idbSetPending: failed to clone pending items, attempting deep sanitize', cloneErr)
+      const sanitize = (v) => {
+        if (v === null || v === undefined) return v
+        const t = typeof v
+        if (t === 'string' || t === 'number' || t === 'boolean') return v
+        if (Array.isArray(v)) return v.map(sanitize)
+        if (t === 'object') {
+          const out = {}
+          try {
+            Object.keys(v).forEach(k => {
+              try {
+                const val = v[k]
+                const vt = typeof val
+                if (vt === 'function' || vt === 'symbol') return
+                out[k] = sanitize(val)
+              } catch (e) {}
+            })
+          } catch (e) {}
+          return out
+        }
+        try { return JSON.parse(JSON.stringify(v)) } catch (e) { return String(v) }
+      }
+      try {
+        toStore = Array.isArray(items) ? items.map(i => sanitize(i)) : sanitize(items)
+      } catch (sanErr) {
+        console.warn('idbSetPending: deep sanitize failed, falling back to shallow copy', sanErr)
+        try { toStore = Array.isArray(items) ? items.map(i => Object.assign({}, i)) : Object.assign({}, items) } catch (shallowErr) { console.warn('idbSetPending: shallow copy failed', shallowErr); toStore = items }
+      }
+    }
     return new Promise((resolve, reject) => {
       const tx = db.transaction('orbitPending', 'readwrite')
       const store = tx.objectStore('orbitPending')
-      const r = store.put(items, 'pending')
-      r.onsuccess = () => resolve(true)
-      r.onerror = () => reject(r.error)
+      const r = store.put(toStore, 'pending')
+      r.onsuccess = () => {
+        try { console.debug('idbSetPending: persisted pending queue length', Array.isArray(toStore) ? toStore.length : null) } catch (e) {}
+        try {
+          // If queue is empty, remove the synchronous fallback to avoid replaying empty arrays
+          if (Array.isArray(toStore) && toStore.length === 0) {
+            try { if (typeof localStorage !== 'undefined') { localStorage.removeItem('orbit:pending_fallback'); try { console.debug('idbSetPending: removed orbit:pending_fallback') } catch (e) {} } } catch (e) { console.warn('idbSetPending: failed to remove pending_fallback', e) }
+          } else {
+            try { persistPendingFallback(toStore) } catch (e) {}
+          }
+        } catch (e) {}
+        resolve(true)
+      }
+      r.onerror = () => {
+        try { console.warn('idbSetPending: idb put error', r.error) } catch (e) {}
+        try { persistPendingFallback(toStore) } catch (e) {}
+        reject(r.error)
+      }
     })
-  } catch (e) { return false }
+  } catch (e) { console.warn('idbSetPending failed', e); return false }
 }
 
 // Safe wrappers that log issues when IndexedDB operations fail
 async function safeIdbGetPending() {
   try {
-    return await idbGetPending()
+    const fromIdb = await idbGetPending()
+    if (Array.isArray(fromIdb) && fromIdb.length > 0) return fromIdb
+    // fallback: check synchronous localStorage copy (helps when a reload interrupted IDB write)
+    try {
+      if (typeof localStorage !== 'undefined') {
+        const raw = localStorage.getItem('orbit:pending_fallback')
+        if (raw) {
+          try {
+            const parsed = JSON.parse(raw)
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              console.debug('safeIdbGetPending: recovered pending queue from localStorage fallback', parsed.length)
+              return parsed
+            }
+          } catch (e) { /* ignore parse errors */ }
+        }
+      }
+    } catch (e) {}
+    return fromIdb || []
   } catch (e) {
     console.warn('safeIdbGetPending failed', e)
+    // try localStorage fallback when IDB access fails
+    try {
+      if (typeof localStorage !== 'undefined') {
+        const raw = localStorage.getItem('orbit:pending_fallback')
+        if (raw) {
+          try { return JSON.parse(raw) } catch (e) { return [] }
+        }
+      }
+    } catch (e) {}
     return []
   }
 }
@@ -438,6 +677,42 @@ async function safeIdbSetPending(items) {
     return ok
   } catch (e) {
     console.warn('safeIdbSetPending failed', e)
+    return false
+  }
+}
+
+// Remove pending item(s) whose transform references `transformId`.
+async function removePendingByTransformId(transformId) {
+  try {
+    if (!transformId) return false
+    const prev = Array.isArray(pendingQueue) ? pendingQueue.slice() : []
+    const filtered = prev.filter(p => {
+      const t = p && (p.transform || (p.item && p.item.transform) || p)
+      if (!t) return true
+      const ids = []
+      try {
+        if (t.entry && t.entry.id) ids.push(String(t.entry.id))
+      } catch (e) {}
+      try {
+        if (t.transformId) ids.push(String(t.transformId))
+      } catch (e) {}
+      try {
+        if (t.transform && t.transform.entry && t.transform.entry.id) ids.push(String(t.transform.entry.id))
+      } catch (e) {}
+      if (ids.some(id => id === String(transformId))) return false
+      return true
+    })
+    if (filtered.length !== prev.length) {
+      pendingQueue = filtered
+      pendingOps = pendingQueue.length
+      try { await safeIdbSetPending(pendingQueue) } catch (e) { console.warn('removePendingByTransformId: failed to persist pending', e) }
+      return true
+    } else {
+      if (pendingOps > 0) pendingOps = Math.max(0, pendingOps - 1)
+      return false
+    }
+  } catch (e) {
+    console.warn('removePendingByTransformId failed', e)
     return false
   }
 }
@@ -556,11 +831,28 @@ async function applyRemoteTransform(transform) {
       if (idx === -1) {
         rows.push(entry)
       } else {
-        // merge using lastModified if present, otherwise shallow merge
+        // merge using lastModified when available; be conservative when incoming lacks timestamps
         const existing = rows[idx]
-        if (entry && entry.lastModified && existing && existing.lastModified) {
-          if (entry.lastModified >= existing.lastModified) rows[idx] = Object.assign({}, existing, entry)
-        } else {
+        const existingTs = (existing && existing.lastModified) ? Number(existing.lastModified) || 0 : 0
+        const incomingTs = (entry && entry.lastModified) ? Number(entry.lastModified) || 0 : 0
+        try {
+          if (incomingTs === 0 && existingTs > 0) {
+            // incoming has no timestamp but we have a local edit -> prefer local, but merge authoritative assignment arrays if present
+            const updated = Object.assign({}, existing)
+            try {
+              if (Array.isArray(entry.responsible_ids)) updated.responsible = entry.responsible_ids.slice()
+              if (Array.isArray(entry.devotional_ids)) updated.devotional = entry.devotional_ids.slice()
+              if (Array.isArray(entry.cant_come_ids)) updated.cant_come = entry.cant_come_ids.slice()
+            } catch (e) {}
+            rows[idx] = updated
+          } else if (incomingTs >= existingTs) {
+            // incoming is newer (or both zero) -> apply shallow merge with incoming taking precedence
+            rows[idx] = Object.assign({}, existing, entry)
+          } else {
+            // existing is newer -> ignore incoming update
+          }
+        } catch (e) {
+          // fallback to shallow merge on unexpected errors
           rows[idx] = Object.assign({}, existing, entry)
         }
       }
@@ -617,11 +909,59 @@ async function setLocalEntries(scheduleId, entries) {
     if (!existing) {
       try { existing = await idbGet(scheduleId) } catch (e) { existing = [] }
     }
-    const localUnsynced = Array.isArray(existing) ? existing.filter(r => r && typeof r.id === 'string' && r.id.startsWith('local-')) : []
-    const merged = serverRows.slice()
-    for (const local of localUnsynced) {
-      if (!merged.find(m => String(m.id) === String(local.id))) merged.push(local)
+    // Also preserve any entries that have pending transforms (updates/creates)
+    // so that a subsequent bootstrap from server rows doesn't clobber local edits
+    const pendingEntryIds = new Set()
+    try {
+      // include persisted pending transforms from IDB (or fallback)
+      const persistedPending = await safeIdbGetPending().catch(() => [])
+      for (const p of (persistedPending || [])) {
+        try {
+          const t = (p && p.transform) ? p.transform : (p && p.item && p.item.transform ? p.item.transform : null)
+          if (t && String(t.scheduleId) === String(scheduleId) && t.entry && t.entry.id) pendingEntryIds.add(String(t.entry.id))
+        } catch (e) {}
+      }
+      // include any in-memory queued pending transforms
+      for (const p of (pendingQueue || [])) {
+        try {
+          const t = (p && p.transform) ? p.transform : (p && p.item && p.item.transform ? p.item.transform : null)
+          if (t && String(t.scheduleId) === String(scheduleId) && t.entry && t.entry.id) pendingEntryIds.add(String(t.entry.id))
+        } catch (e) {}
+      }
+    } catch (e) {}
+
+    // Merge server rows with local memory carefully:
+    // - If a local entry has a newer `lastModified` than the server-provided row, prefer local.
+    // - Always preserve locally-created `local-*` rows and any rows with pending transforms.
+    const mergedMap = new Map()
+    // First, add server rows but allow local to override when newer
+    for (const sr of serverRows) {
+      try {
+        const id = String(sr && sr.id)
+        let chosen = sr
+        const local = Array.isArray(existing) ? existing.find(r => r && String(r.id) === id) : null
+        if (local && local.lastModified) {
+          const localTs = Number(local.lastModified) || 0
+          const serverTs = (sr && sr.lastModified) ? Number(sr.lastModified) || 0 : 0
+          if (localTs > serverTs) chosen = Object.assign({}, local)
+        }
+        mergedMap.set(id, chosen)
+      } catch (e) { try { mergedMap.set(String((sr && sr.id) || Date.now()), sr) } catch (er) {} }
     }
+
+    // Then, ensure any existing local-only entries are preserved (local- ids, pending, or locally-modified)
+    for (const local of (Array.isArray(existing) ? existing : [])) {
+      try {
+        const id = String(local && local.id)
+        if (!mergedMap.has(id)) {
+          if (id.startsWith('local-') || pendingEntryIds.has(id) || (local.lastModified && Number(local.lastModified) > 0)) {
+            mergedMap.set(id, Object.assign({}, local))
+          }
+        }
+      } catch (e) {}
+    }
+
+    const merged = Array.from(mergedMap.values())
     memoryStore[scheduleId] = merged.slice()
     await idbSet(scheduleId, memoryStore[scheduleId])
     try { console.debug('setLocalEntries: persisted merged rows (id,start,end,date):', (memoryStore[scheduleId] || []).map(r => ({ id: r.id, start: r.start, end: r.end, date: r.date }))) } catch (e) {}
@@ -653,6 +993,25 @@ async function syncOrganization(orgId) {
   ensureInitialized()
   if (!orgId) return false
   try {
+    // Short wait or best-effort flush to avoid race where we immediately
+    // bootstrap server rows that overwrite local pending edits. If there
+    // are pending transforms, try a short flush when WS is open, otherwise
+    // wait briefly to give reconnect loop a chance to run.
+    try {
+      const hasPending = (pendingOps > 0) || (Array.isArray(pendingQueue) && pendingQueue.length > 0)
+      if (hasPending) {
+        if (orbit && orbit.ws && orbit.ws.readyState === WebSocket.OPEN) {
+          try {
+            await Promise.race([attemptFlushPendingShort(800), new Promise(r => setTimeout(r, 800))])
+            // allow a small grace for ack processing
+            await new Promise(r => setTimeout(r, 300))
+          } catch (e) {}
+        } else {
+          // not connected: small grace period for reconnect attempts
+          await new Promise(r => setTimeout(r, 600))
+        }
+      }
+    } catch (e) {}
     const api = apiClient()
     if (!api) return false
     // fetch schedules for org
@@ -750,25 +1109,30 @@ async function createEntry(scheduleId, entry) {
   if (orbit && orbit.ws && orbit.ws.readyState === WebSocket.OPEN) {
     const payload = { type: 'transform', transform: { op: 'create', scheduleId, entry: toCreate } }
     try {
-      console.debug('Orbit WS sending create transform', scheduleId, toCreate && toCreate.id)
+      ensureTransformMetadata(payload)
+      console.debug('Orbit WS sending create transform', scheduleId, toCreate && toCreate.id, 'transformId', payload.transform && payload.transform.transformId)
       orbit.ws.send(JSON.stringify(payload))
       lastSentTs = Date.now()
       pendingOps = pendingOps + 1
     } catch (e) {
       console.warn('Orbit WS send failed, queuing', e)
       const msg = payload
+      // ensure metadata on queued copy as well
+      try { ensureTransformMetadata(msg) } catch (er) {}
       pendingQueue.push(msg)
       pendingOps = pendingQueue.length
-      const ok1b = await idbSetPending(pendingQueue)
+      const ok1b = await safeIdbSetPending(pendingQueue)
       if (!ok1b) console.warn('createEntry: failed to persist pending queue after send failure')
     }
   } else {
     // queue transform for later delivery
     const msg = { type: 'transform', transform: { op: 'create', scheduleId, entry: toCreate } }
+    try { ensureTransformMetadata(msg) } catch (e) {}
     pendingQueue.push(msg)
     pendingOps = pendingQueue.length
-    console.debug('createEntry: queued pending transform', scheduleId, toCreate && toCreate.id)
-    const ok1 = await idbSetPending(pendingQueue)
+    try { persistPendingFallback(pendingQueue) } catch (e) {}
+    console.debug('createEntry: queued pending transform', scheduleId, toCreate && toCreate.id, 'transformId', msg.transform && msg.transform.transformId)
+    const ok1 = await safeIdbSetPending(pendingQueue)
     if (!ok1) console.warn('createEntry: failed to persist pending queue')
   }
   // broadcast to other tabs via localStorage as a fast-fallback
@@ -805,7 +1169,12 @@ async function updateEntry(scheduleId, entry) {
       try { console.debug('updateEntry: overriding cant_come from entry.cant_come_ids', toUpdate.cant_come.length) } catch (e) {}
     }
   } catch (e) {}
-  if (idx === -1) rows.push(toUpdate)
+    if (idx === -1) {
+      rows.push(toUpdate)
+      console.debug('updateEntry: queued pending transform', scheduleId, toUpdate && toUpdate.id)
+      const ok1 = await safeIdbSetPending(pendingQueue)
+      if (!ok1) console.warn('updateEntry: failed to persist pending queue')
+    }
   else rows[idx] = toUpdate
   memoryStore[scheduleId] = rows.slice()
   await idbSet(scheduleId, memoryStore[scheduleId])
@@ -905,23 +1274,28 @@ async function updateEntry(scheduleId, entry) {
   if (orbit && orbit.ws && orbit.ws.readyState === WebSocket.OPEN) {
     const payload = { type: 'transform', transform: { op: 'update', scheduleId, entry: toUpdate } }
     try {
-      console.debug('Orbit WS sending update transform', scheduleId, toUpdate && toUpdate.id, 'payload', { type: 'transform', transform: { op: 'update', scheduleId, entry: toUpdate } })
+      ensureTransformMetadata(payload)
+      console.debug('Orbit WS sending update transform', scheduleId, toUpdate && toUpdate.id, 'transformId', payload.transform && payload.transform.transformId)
       orbit.ws.send(JSON.stringify(payload))
       lastSentTs = Date.now()
       pendingOps = pendingOps + 1
     } catch (e) {
       console.warn('Orbit WS send failed for update, queuing', e)
-      pendingQueue.push(payload)
+      const msg = payload
+      try { ensureTransformMetadata(msg) } catch (er) {}
+      pendingQueue.push(msg)
       pendingOps = pendingQueue.length
-      const ok2b = await idbSetPending(pendingQueue)
+      const ok2b = await safeIdbSetPending(pendingQueue)
       if (!ok2b) console.warn('updateEntry: failed to persist pending queue after send failure')
     }
   } else {
     const msg = { type: 'transform', transform: { op: 'update', scheduleId, entry: toUpdate } }
+    try { ensureTransformMetadata(msg) } catch (e) {}
     pendingQueue.push(msg)
     pendingOps = pendingQueue.length
-    console.debug('updateEntry: queued pending transform', scheduleId, toUpdate && toUpdate.id)
-    const ok2 = await idbSetPending(pendingQueue)
+    try { persistPendingFallback(pendingQueue) } catch (e) {}
+    console.debug('updateEntry: queued pending transform', scheduleId, toUpdate && toUpdate.id, 'transformId', msg.transform && msg.transform.transformId)
+    const ok2 = await safeIdbSetPending(pendingQueue)
     if (!ok2) console.warn('updateEntry: failed to persist pending queue')
   }
   try {
@@ -965,23 +1339,27 @@ async function deleteEntry(scheduleId, entryId) {
               try { orbit._bc.postMessage(payload) } catch (e) { console.warn('BroadcastChannel postMessage failed', e) }
             }
           } catch (e) {}
-      console.debug('Orbit WS sending delete transform', scheduleId, entryId)
+      try { ensureTransformMetadata(payload) } catch (e) {}
+      console.debug('Orbit WS sending delete transform', scheduleId, entryId, 'transformId', payload.transform && payload.transform.transformId)
       orbit.ws.send(JSON.stringify(payload))
       lastSentTs = Date.now()
       pendingOps = pendingOps + 1
     } catch (e) {
       console.warn('Orbit WS send failed for delete, queuing', e)
+      try { ensureTransformMetadata(payload) } catch (er) {}
       pendingQueue.push(payload)
       pendingOps = pendingQueue.length
-      const ok3b = await idbSetPending(pendingQueue)
+      const ok3b = await safeIdbSetPending(pendingQueue)
       if (!ok3b) console.warn('deleteEntry: failed to persist pending queue after send failure')
     }
   } else {
     const msg = { type: 'transform', transform: { op: 'delete', scheduleId, entry: { id: entryId } } }
+    try { ensureTransformMetadata(msg) } catch (e) {}
     pendingQueue.push(msg)
     pendingOps = pendingQueue.length
-    console.debug('deleteEntry: queued pending transform', scheduleId, entryId)
-    const ok3 = await idbSetPending(pendingQueue)
+    try { persistPendingFallback(pendingQueue) } catch (e) {}
+    console.debug('deleteEntry: queued pending transform', scheduleId, entryId, 'transformId', msg.transform && msg.transform.transformId)
+    const ok3 = await safeIdbSetPending(pendingQueue)
     if (!ok3) console.warn('deleteEntry: failed to persist pending queue')
   }
   try {
@@ -1063,15 +1441,59 @@ export default {
   // developer helpers for pending queue
   getPendingQueue: async () => {
     try {
-      const q = await idbGetPending()
-      return Array.isArray(q) ? q.slice() : []
+      const persisted = await safeIdbGetPending().catch(() => []) || []
+      const mem = Array.isArray(pendingQueue) ? pendingQueue.slice() : []
+      const out = []
+      const seen = new Set()
+      const extractId = (p) => {
+        try {
+          const t = p && (p.transform || (p.item && p.item.transform) || p)
+          if (!t) return null
+          if (t.transformId) return String(t.transformId)
+          if (t.entry && t.entry.id) return String(t.entry.id)
+        } catch (e) {}
+        try { return JSON.stringify(p) } catch (e) { return null }
+      }
+      for (const p of persisted) {
+        const id = extractId(p)
+        if (id) seen.add(id)
+        out.push(p)
+      }
+      for (const p of mem) {
+        const id = extractId(p)
+        if (!id || !seen.has(id)) {
+          out.push(p)
+          if (id) seen.add(id)
+        }
+      }
+      return out
     } catch (e) { return pendingQueue.slice() }
   },
   flushPending: async () => {
     // attempt to send persisted pending queue via websocket; returns remaining count
     try {
       if (!orbit || !orbit.ws || orbit.ws.readyState !== WebSocket.OPEN) throw new Error('Websocket not open')
-      const q = (await idbGetPending()) || []
+      const q = (await safeIdbGetPending()) || []
+      // Ensure persisted pending items have transformId/lastModified metadata
+      try {
+        let metaModified = false
+        for (let i = 0; i < q.length; i++) {
+          try {
+            const item = q[i]
+            const t = item && (item.transform || (item.item && item.item.transform) || item)
+            const hadId = Boolean(t && t.transformId)
+            const hadLm = Boolean(t && t.entry && t.entry.lastModified)
+            ensureTransformMetadata(item)
+            const t2 = item && (item.transform || (item.item && item.item.transform) || item)
+            const hasId = Boolean(t2 && t2.transformId)
+            const hasLm = Boolean(t2 && t2.entry && t2.entry.lastModified)
+            if ((!hadId && hasId) || (!hadLm && hasLm)) metaModified = true
+          } catch (e) {}
+        }
+        if (metaModified) {
+          try { await safeIdbSetPending(q) } catch (e) { console.warn('flushPending: failed to persist metadata-updated queue', e) }
+        }
+      } catch (e) {}
       // reconciliation step: POST any create ops with local-* ids to the server to get canonical ids
       let modified = false
       try {
@@ -1134,11 +1556,83 @@ export default {
                   console.warn('Reconciliation POST failed for local entry', entry.id, e)
                 }
               }
+            } else if (item && item.type === 'transform' && item.transform && item.transform.rows && typeof item.transform.rows === 'object') {
+              // Handle bulk transforms that include a rows mapping: scheduleId -> [entries]
+              try {
+                const rowsMap = item.transform.rows
+                for (const sid of Object.keys(rowsMap)) {
+                  const rowArr = Array.isArray(rowsMap[sid]) ? rowsMap[sid] : []
+                  for (const entry of rowArr) {
+                    try {
+                      if (entry && typeof entry.id === 'string' && entry.id.startsWith('local-')) {
+                        // build server payload
+                        const payload = {
+                          date: entry.date,
+                          name: entry.name,
+                          description: entry.description || '',
+                          notes: entry.notes || '',
+                          public_event: !!entry.public_event,
+                          responsible_ids: extractIds(entry.responsible || entry.responsible_ids),
+                          devotional_ids: extractIds(entry.devotional || entry.devotional_ids),
+                          cant_come_ids: extractIds(entry.cant_come || entry.cant_come_ids),
+                        }
+                        try {
+                          const resp = await api.post(`schedules/${sid}/entries`, payload)
+                          const serverEntry = resp && resp.data && resp.data.data ? resp.data.data : null
+                          if (serverEntry && serverEntry.id) {
+                            const oldId = entry.id
+                            const newId = serverEntry.id
+                            // update memoryStore
+                            if (memoryStore && memoryStore[sid]) {
+                              for (let j = 0; j < memoryStore[sid].length; j++) {
+                                if (memoryStore[sid][j] && String(memoryStore[sid][j].id) === String(oldId)) {
+                                  memoryStore[sid][j] = Object.assign({}, memoryStore[sid][j], { id: newId })
+                                }
+                              }
+                              try { await idbSet(sid, memoryStore[sid]) } catch (e) { console.warn('idbSet after reconciliation failed', e) }
+                            }
+                            // replace ids in pending queue entries
+                            for (let k = 0; k < q.length; k++) {
+                              const qi = q[k]
+                              try {
+                                if (qi && qi.type === 'transform' && qi.transform) {
+                                  // replace occurrences in single-entry transforms
+                                  if (qi.transform.entry && qi.transform.entry.id === oldId) {
+                                    qi.transform.entry.id = newId
+                                    modified = true
+                                  }
+                                  // replace occurrences in bulk rows transforms
+                                  if (qi.transform.rows && typeof qi.transform.rows === 'object') {
+                                    try {
+                                      for (const rSid of Object.keys(qi.transform.rows)) {
+                                        const arr = qi.transform.rows[rSid]
+                                        if (!Array.isArray(arr)) continue
+                                        for (const ent of arr) {
+                                          if (ent && ent.id === oldId) {
+                                            ent.id = newId
+                                            modified = true
+                                          }
+                                        }
+                                      }
+                                    } catch (e) {}
+                                  }
+                                }
+                              } catch (e) {}
+                            }
+                          }
+                        } catch (e) {
+                          console.warn('Reconciliation POST failed for bulk local entry', entry.id, e)
+                        }
+                      }
+                    } catch (e) {}
+                  }
+                }
+              } catch (e) { console.warn('flushPending: bulk rows reconciliation failed', e) }
             }
           } catch (e) {}
         }
         if (modified) {
-          try { await idbSetPending(q) } catch (e) { console.warn('Failed to persist modified pending queue', e) }
+          try { await safeIdbSetPending(q) } catch (e) { console.warn('Failed to persist modified pending queue', e) }
         }
       } catch (e) {
         console.warn('Reconciliation step failed', e)
@@ -1161,7 +1655,7 @@ export default {
       }
       pendingQueue = remaining.slice()
       pendingOps = pendingQueue.length
-      await idbSetPending(pendingQueue)
+      await safeIdbSetPending(pendingQueue)
       return pendingOps
     } catch (e) {
       lastError = e
@@ -1171,7 +1665,7 @@ export default {
   clearPending: async () => {
     pendingQueue = []
     pendingOps = 0
-    try { await idbSetPending([]) } catch (e) {}
+    try { await safeIdbSetPending([]) } catch (e) {}
     return true
   }
   ,getLocalEntries,
@@ -1183,7 +1677,9 @@ export default {
   sendTransform: async (payload) => {
     try {
       if (!payload) throw new Error('sendTransform: missing payload')
+      try { ensureTransformMetadata(payload) } catch (e) {}
       if (orbit && orbit.ws && orbit.ws.readyState === WebSocket.OPEN) {
+        try { console.debug('sendTransform: sending payload transformId', payload && payload.transform && payload.transform.transformId) } catch (e) {}
         orbit.ws.send(JSON.stringify(payload))
         lastSentTs = Date.now()
         pendingOps = pendingOps + 1
@@ -1192,7 +1688,12 @@ export default {
       // persist to pending queue when offline
       pendingQueue.push(payload)
       pendingOps = pendingQueue.length
-      try { await idbSetPending(pendingQueue) } catch (e) { console.warn('sendTransform: failed to persist pending', e) }
+      try { console.debug('sendTransform: persisting fallback pending length', pendingQueue.length) } catch (e) {}
+      try { persistPendingFallback(pendingQueue) } catch (e) { console.warn('sendTransform: persistPendingFallback failed', e) }
+      try {
+        const ok = await safeIdbSetPending(pendingQueue)
+        try { console.debug('sendTransform: safeIdbSetPending result', ok) } catch (e) {}
+      } catch (e) { console.warn('sendTransform: failed to persist pending', e) }
       // also broadcast to other tabs so they can update optimistically
       try { if (typeof localStorage !== 'undefined') { console.debug('sendTransform: broadcasting to other tabs'); localStorage.setItem('orbit:transform', JSON.stringify({ ts: Date.now(), item: payload })) } } catch (e) {}
       return false

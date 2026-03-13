@@ -10,6 +10,9 @@ from app.models.permission import Permission
 from app.models.role_permission import RolePermission
 from app.models.user_organization_role import UserOrganizationRole
 from app.models.role_permission_resource import RolePermissionResource
+from app.models.admin_message import AdminMessage
+from app.models.invitation import Invitation
+from app.models.app_setting import AppSetting
 
 __all__ = [
 	"Activity",
@@ -24,4 +27,7 @@ __all__ = [
 	"RolePermission",
 	"RolePermissionResource",
 	"UserOrganizationRole",
+	"AdminMessage",
+	"Invitation",
+	"AppSetting",
 ]

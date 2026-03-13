@@ -5,6 +5,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 
 from app.main import app
 from app.db.base import Base
@@ -15,8 +16,17 @@ from app.models import Role, Permission, RolePermissionResource
 @pytest.fixture
 def test_db():
     # in-memory sqlite for tests
-    engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
-    TestingSessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+    # Use StaticPool so the in-memory SQLite database is the same across
+    # connections/threads (TestClient runs the app in another thread).
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    # keep attributes available on instances after commit so test helpers that
+    # return model instances can access simple scalar attributes without a
+    # live Session (avoids DetachedInstanceError during test collection).
+    TestingSessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
     Base.metadata.create_all(bind=engine)
 
     def _get_db():

@@ -48,3 +48,12 @@ def require_org_admin_or_superadmin(user, organization_id: str | None = None):
     if user_has_role(user, "org_admin", organization_id):
         return
     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Requires organization admin or superadmin")
+
+
+def user_assigned_to_org(user, organization_id: str | None) -> bool:
+    if organization_id is None:
+        return False
+    for a in getattr(user, "organization_roles", []) or []:
+        if a.organization_id == organization_id:
+            return True
+    return False

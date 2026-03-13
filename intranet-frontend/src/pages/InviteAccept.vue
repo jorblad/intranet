@@ -1,0 +1,154 @@
+<template>
+  <q-page class="row items-center justify-center">
+    <form @submit.prevent="submit">
+      <q-card style="min-width:320px; max-width:420px;">
+        <q-card-section>
+          <div class="text-h6">{{ $t('inviteAccept.setPasswordTitle') }}</div>
+        </q-card-section>
+        <q-card-section>
+          <div v-if="loading" class="text-caption">{{ $t('inviteAccept.loadingInvite') }}</div>
+          <div v-else>
+            <div v-if="!tokenValid" class="q-mb-sm text-negative">
+              <div class="text-subtitle2">{{ $t('inviteAccept.invalidOrExpiredToken') }}</div>
+              <pre v-if="debugInfo && isDev" style="margin-top:8px; white-space:pre-wrap; color:var(--q-color-grey-4)">{{ JSON.stringify(debugInfo, null, 2) }}</pre>
+            </div>
+            <div v-else class="q-mb-sm">
+              <div class="text-subtitle2">{{ $t('inviteAccept.username') }} <strong>{{ username }}</strong></div>
+              <div v-if="displayName" class="text-caption">{{ $t('inviteAccept.displayName') }} {{ displayName }}</div>
+              <q-input v-model="password" type="password" :label="$t('inviteAccept.password')" dense />
+              <q-input v-model="confirm" type="password" :label="$t('inviteAccept.confirmPassword')" dense class="q-mt-sm" />
+            </div>
+          </div>
+        </q-card-section>
+        <q-card-actions align="right">
+          <q-btn flat type="button" :label="$t('common.cancel')" @click="goLogin" />
+          <q-btn color="primary" type="submit" :label="$t('common.save')" />
+        </q-card-actions>
+      </q-card>
+    </form>
+  </q-page>
+</template>
+
+<script setup>
+import { ref, onMounted } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import axios from 'axios'
+import { useQuasar } from 'quasar'
+
+const route = useRoute()
+const router = useRouter()
+const $q = useQuasar()
+
+const token = ref('')
+const password = ref('')
+const confirm = ref('')
+const username = ref('')
+const displayName = ref('')
+const loading = ref(false)
+const isDev = import.meta.env.DEV
+const tokenValid = ref(true)
+const debugInfo = ref(null)
+
+onMounted(() => {
+  const rawToken = route.query.token
+  if (Array.isArray(rawToken)) {
+    token.value = rawToken[0] || ''
+  } else if (typeof rawToken === 'string') {
+    token.value = rawToken
+  } else {
+    token.value = ''
+  }
+  // fallback: if router query is empty (hash-mode routing or normalization issues),
+  // try to read token from the URL hash manually
+  if (!token.value && typeof window !== 'undefined') {
+    try {
+      const h = String(window.location.hash || '')
+      const m = h.match(/[?&]token=([^&]+)/)
+      if (m) token.value = decodeURIComponent(m[1])
+    } catch (e) {}
+  }
+  if (token.value) {
+    loading.value = true
+    axios.get('/api/user/invite', { params: { token: token.value } }).then(res => {
+      const d = res.data?.data || {}
+      debugInfo.value = d
+      if (d && d.user && d.user.username) {
+        username.value = d.user.username || ''
+        displayName.value = d.user.display_name || ''
+        tokenValid.value = true
+      } else {
+        tokenValid.value = false
+      }
+    }).catch(err => {
+      debugInfo.value = err.response?.data || null
+      tokenValid.value = false
+    }).finally(() => { loading.value = false })
+  } else {
+    // no token in query -> mark invalid so user cannot submit
+    tokenValid.value = false
+  }
+})
+
+function goLogin() {
+  router.push({ path: '/login' })
+}
+
+async function submit() {
+  if (!token.value) {
+    $q.notify({ type: 'negative', message: t('inviteAccept.missingInviteToken') })
+    return
+  }
+  if (!password.value) {
+    $q.notify({ type: 'warning', message: t('inviteAccept.pleaseProvidePassword') })
+    return
+  }
+  if (password.value !== confirm.value) {
+    $q.notify({ type: 'warning', message: t('inviteAccept.passwordsDoNotMatch') })
+    return
+  }
+
+  try {
+    if (!tokenValid.value) {
+      $q.notify({ type: 'negative', message: t('inviteAccept.missingOrInvalidInviteToken') })
+      return
+    }
+    // Backend expects token and password in the POST body
+    await axios.post('/api/user/invite/accept', { token: token.value, password: password.value })
+    $q.notify({ type: 'positive', message: t('inviteAccept.passwordSetSuccess') })
+    router.push({ path: '/login' })
+  } catch (err) {
+    $q.notify({
+      type: 'negative',
+      message: err.response?.data?.detail || t('inviteAccept.failedToAcceptInvite')
+    })
+  }
+}
+</script>
+
+<i18n>
+{
+  "en-US": {
+    "inviteAccept": {
+      "missingInviteToken": "Missing invite token",
+      "pleaseProvidePassword": "Please provide a password",
+      "passwordsDoNotMatch": "Passwords do not match",
+      "missingOrInvalidInviteToken": "Missing or invalid invite token",
+      "passwordSetSuccess": "Password set — you may now log in",
+      "failedToAcceptInvite": "Failed to accept invite"
+    }
+  },
+  "sv-SE": {
+    "inviteAccept": {
+      "missingInviteToken": "Inbjudningstoken saknas",
+      "pleaseProvidePassword": "Ange ett lösenord",
+      "passwordsDoNotMatch": "Lösenorden stämmer inte överens",
+      "missingOrInvalidInviteToken": "Ogiltig eller saknad inbjudningstoken",
+      "passwordSetSuccess": "Lösenordet är sparat – du kan nu logga in",
+      "failedToAcceptInvite": "Kunde inte acceptera inbjudan"
+    }
+  }
+}
+</i18n>
+
+<style scoped>
+</style>

@@ -2,7 +2,7 @@
 <template>
   <q-page>
     <div class="row no-wrap">
-      <q-toolbar inset class="bg-primary text-white q-my-md shadow-2 q-gutter-xs">
+      <q-toolbar inset class="bg-primary text-white q-mt-md q-mb-none shadow-2 q-gutter-xs">
 
         <!-- Toolbar title -->
         <q-toolbar-title>{{$t('termschedules.title')}}</q-toolbar-title>
@@ -54,7 +54,27 @@
                     new-value-mode="add-unique"
                     @new-value="handleActivityNew"
                 />
-                <q-btn flat dense round icon="link" size="sm" class="q-ml-sm" v-if="activity" @click="copyActivityPublicLink" :title="$t('termschedules.copy_activity_calendar')" />
+                <div class="mobile-copy-buttons q-mt-sm">
+                  <q-btn
+                    block
+                    color="primary"
+                    icon="content_copy"
+                    v-if="activity"
+                    @click="copyActivityPublicLink"
+                    :label="$t('termschedules.copy_activity_calendar')"
+                    :disabled="!activityCalendarUrl"
+                  />
+                  <q-btn
+                    block
+                    flat
+                    color="secondary"
+                    icon="public"
+                    class="q-mt-sm"
+                    @click="copyPublicCalendarLink"
+                    :label="$t('termschedules.copy_public_calendar')"
+                    :disabled="!publicCalendarUrl"
+                  />
+                </div>
               </q-item-section>
             </q-item>
 
@@ -69,7 +89,6 @@
                 color="primary"
                 @click="addRow"
               ></q-btn>
-              <q-btn flat dense round icon="link" size="sm" class="q-ml-sm" v-if="activity" @click="copyActivityPublicLink" :title="$t('termschedules.copy_activity_calendar')" />
               </q-item-section>
             </q-item>
           </q-list>
@@ -130,8 +149,66 @@
 
           </q-item>
 
+          <!-- URL inputs moved below toolbar on wide screens to use full width -->
+
         </div>
         </q-toolbar>
+    </div>
+
+    <!-- Full-width calendar URL row so links can use all available space -->
+    <div v-if="!$q.screen.lt.sm" class="calendar-url-full-row bg-primary text-white q-pa-sm">
+      <div class="row items-center no-wrap">
+        <div class="col">
+          <div class="row items-center no-wrap">
+            <div class="col calendar-url-col calendar-url-activity">
+              <q-input
+                readonly
+                dense
+                dark
+                :model-value="activityCalendarUrl"
+                :label="$t('termschedules.activity_calendar_url')"
+                input-class="calendar-url-input"
+              />
+            </div>
+            <div class="col-auto">
+              <q-btn
+                flat
+                dense
+                round
+                icon="content_copy"
+                :disabled="!activityCalendarUrl"
+                @click="copyActivityPublicLink"
+                :title="$t('termschedules.copy_activity_calendar')"
+              />
+            </div>
+          </div>
+        </div>
+        <div class="col">
+          <div class="row items-center no-wrap">
+            <div class="col calendar-url-col calendar-url-public">
+              <q-input
+                readonly
+                dense
+                dark
+                :model-value="publicCalendarUrl"
+                :label="$t('termschedules.public_calendar_url')"
+                input-class="calendar-url-input"
+              />
+            </div>
+            <div class="col-auto">
+              <q-btn
+                flat
+                dense
+                round
+                icon="content_copy"
+                @click="copyPublicCalendarLink"
+                :title="$t('termschedules.copy_public_calendar')"
+                :disabled="!publicCalendarUrl"
+              />
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <div class="q-pa-md">
@@ -150,7 +227,7 @@
         </div>
       </div>
       <q-table
-        v-if="!$q.screen.xs"
+        v-if="!$q.screen.lt.sm"
         :rows="rows"
         :columns="columns"
         row-key="id"
@@ -168,7 +245,7 @@
 
       >
                 <template v-slot:body="props">
-                  <q-tr :props="props" :class="{ 'mobile-card': $q.screen.xs }">
+                  <q-tr :props="props" :class="{ 'mobile-card': $q.screen.lt.sm }">
                     <q-td key="select" :props="props" style="width:56px">
                       <q-checkbox
                         :model-value="isRowSelected(props.row)"
@@ -291,23 +368,24 @@
             </q-td>
 
             <q-td key="notes" :props="props">
-              {{ props.row.notes }}
+              <div class="notes-cell">
+                <div class="notes-preview md-render" v-html="props.row._previewHtml || renderPreviewFallback(props.row.notes)"></div>
+                <div class="notes-actions q-mt-xs">
+                  <q-btn outline dense class="pill-btn" size="sm" v-if="isLongNote(props.row)" :label="$te('common.readMore') ? $t('common.readMore') : 'Read more'" @click.stop="openNoteDialog(props.row)" />
+                </div>
+
                 <q-popup-edit
-                v-model="props.row.notes"
-                v-slot="scope"
-                buttons
-                persistent
-                :label-set="$t('termschedules.save')"
-                :label-cancel="$t('termschedules.cancel')"
-                v-if="!$q.screen.lt.sm"
-                @save="updateEntry(props.row)">
-                <q-editor
-                  v-model="scope.value"
-                  min-height="5rem"
-                  autofocus
-                  @keyup.enter.stop
-                />
-              </q-popup-edit>
+                  v-model="props.row.notes"
+                  v-slot="scope"
+                  buttons
+                  persistent
+                  :label-set="$t('termschedules.save')"
+                  :label-cancel="$t('termschedules.cancel')"
+                  v-if="!$q.screen.lt.sm"
+                  @save="updateEntry(props.row)">
+                  <markdown-editor v-model="scope.value" />
+                </q-popup-edit>
+              </div>
             </q-td>
 
             <q-td key="public_event" :props="props">
@@ -364,6 +442,14 @@
                               {{ typeof u === 'object' ? (u.label || u.name || u.value) : getUserNameById(u) }}
                             </q-chip>
                           </div>
+
+                          <div class="q-mt-sm">
+                            <strong>{{$t('termschedules.notes_label') || 'Notes'}}:</strong>
+                            <div class="notes-preview q-mt-xs md-render" v-html="row._previewHtml || renderPreviewFallback(row.notes)"></div>
+                            <div v-if="isLongNote(row)" class="q-mt-xs">
+                              <q-btn outline dense small class="pill-btn" :label="$te('common.readMore') ? $t('common.readMore') : 'Read more'" @click.stop="openNoteDialog(row)" />
+                            </div>
+                          </div>
                         </div>
                       </div>
                     </q-card-section>
@@ -378,11 +464,14 @@
     </div>
 
     <q-dialog v-model="dialogVisible">
-      <q-card>
+      <q-card :class="{ 'detail-full-width': detailFullWidth }">
             <q-card-section>
-              <div class="text-h6">
-                  {{ displayStartEnd(selectedRow) }} {{ $t('termschedules.details') }}
+              <div class="row items-center justify-between">
+                <div class="text-h6">{{ displayStartEnd(selectedRow) }} {{ $t('termschedules.details') }}</div>
+                <div>
+                  <q-btn dense flat round icon="open_in_full" :color="detailFullWidth ? 'primary' : undefined" @click="detailFullWidth = !detailFullWidth" :title="detailFullWidth ? ($te('adminMessages.exitFullWidth') ? $t('adminMessages.exitFullWidth') : 'Exit full width') : ($te('adminMessages.fullWidth') ? $t('adminMessages.fullWidth') : 'Full width')" />
                 </div>
+              </div>
             </q-card-section>
 
         <q-card-section>
@@ -423,7 +512,7 @@
             stack-label
             :label="$t('termschedules.cant_come_label')"
           />
-          <q-input v-model="editedRow.notes" :label="$t('termschedules.notes_label')" autogrow/>
+          <markdown-editor v-model="editedRow.notes" />
           <q-toggle
                 v-model="editedRow.public_event"
                 :label="$t('termschedules.public_toggle')"
@@ -435,6 +524,26 @@
           <q-btn color="secondary" :label="$t('termschedules.cancel')" @click="cancelChanges" />
           <q-space />
           <q-btn color="primary" :label="$t('termschedules.save')" @click="saveChanges" />
+        </q-card-actions>
+      </q-card>
+    </q-dialog>
+
+    <!-- Read-more / full notes dialog -->
+    <q-dialog v-model="noteDialogVisible">
+      <q-card style="min-width:320px; max-width:95vw;" :class="{ 'detail-full-width': detailFullWidth }">
+        <q-card-section>
+          <div class="row items-center justify-between">
+            <div class="text-h6">{{ noteDialogTitle }}</div>
+            <div>
+              <q-btn dense flat round icon="open_in_full" :color="detailFullWidth ? 'primary' : undefined" @click="detailFullWidth = !detailFullWidth" :title="detailFullWidth ? ($te('adminMessages.exitFullWidth') ? $t('adminMessages.exitFullWidth') : 'Exit full width') : ($te('adminMessages.fullWidth') ? $t('adminMessages.fullWidth') : 'Full width')" />
+            </div>
+          </div>
+        </q-card-section>
+        <q-card-section>
+          <div class="notes-full md-render" v-html="noteDialogHtml"></div>
+        </q-card-section>
+          <q-card-actions align="right">
+          <q-btn flat :label="$te('common.close') ? $t('common.close') : 'Close'" @click="noteDialogVisible = false" />
         </q-card-actions>
       </q-card>
     </q-dialog>
@@ -534,10 +643,14 @@
             </div>
           </div>
         </q-card-section>
-          <q-card-actions>
-          <q-btn flat :label="$t('termschedules.cancel')" color="secondary" @click="cancelBulkChanges" />
+        <div v-if="bulkProcessing" class="q-pa-sm">
+          <q-linear-progress :value="bulkProgressTotal ? (bulkProgressCount / bulkProgressTotal) : 0" color="primary" />
+          <div class="text-caption q-mt-sm">{{ bulkProgressCount }} / {{ bulkProgressTotal }}</div>
+        </div>
+        <q-card-actions>
+          <q-btn flat :label="$t('termschedules.cancel')" color="secondary" @click="cancelBulkChanges" :disabled="bulkProcessing" />
           <q-space />
-          <q-btn flat :label="$t('termschedules.save')" color="primary" @click="saveBulkChanges" :disabled="!selectedRows || selectedRows.length === 0" />
+          <q-btn flat :label="$t('termschedules.save')" color="primary" @click="saveBulkChanges" :loading="bulkProcessing" :disabled="bulkProcessing || !selectedRows || selectedRows.length === 0" />
         </q-card-actions>
       </q-card>
     </q-dialog>
@@ -572,9 +685,9 @@
           <q-input id="new-entry-notes" name="new-entry-notes" v-model="newEntry.notes" label="Anteckningar" />
         </q-card-section>
         <q-card-actions>
-          <q-btn flat label="Avbryt" color="secondary" @click="addEntryDialogVisible = false" />
+          <q-btn flat label="Avbryt" color="secondary" @click="addEntryDialogVisible = false" :disabled="addEntryProcessing" />
           <q-space />
-          <q-btn flat label="Skapa" color="primary" @click="createEntriesFromRecurrence" />
+          <q-btn flat label="Skapa" color="primary" @click="createEntriesFromRecurrence" :loading="addEntryProcessing" :disabled="addEntryProcessing" />
         </q-card-actions>
       </q-card>
     </q-dialog>
@@ -702,8 +815,8 @@
 /* Slim date/time cell used in table and mobile layouts */
 .date-cell
   display: inline-block
-  min-width: 80px
-  max-width: 110px
+  min-width: 110px
+  max-width: 140px
   font-size: 0.85rem
   padding: 2px 6px
   text-align: center
@@ -717,15 +830,52 @@ td.sticky-col
 /* Bulk edit compact pairing for mobile + responsive layout */
 .bulk-pair
   display: flex
+
+/* Notes preview styling and read-more */
+.notes-preview
+  display: -webkit-box
+  -webkit-box-orient: vertical
+  -webkit-line-clamp: 2
+  overflow: hidden
+  max-width: 30ch
+  white-space: normal
+  word-break: break-word
+
+.notes-col
+  max-width: 30ch
+  overflow: hidden
+
+@media (min-width: 600px)
+  .notes-preview
+    -webkit-line-clamp: 3
+    max-width: 60ch
+  .notes-col
+    max-width: 60ch
+
+.notes-cell
+  display: flex
+  flex-direction: column
+
+.notes-actions
+  display: flex
+  gap: 8px
+
+.pill-btn
+  border-radius: 999px
+  padding-left: 12px
+  padding-right: 12px
+  min-height: 28px
+  font-size: 0.85rem
+
+.detail-full-width
+  width: calc(98vw)
+  max-width: none
+
+.notes-full
+  white-space: normal
+  word-break: break-word
   flex-direction: column
   gap: 4px
-
-  .q-input,
-  .q-select,
-  .q-toggle
-    margin-top: 4px
-    margin-bottom: 8px
-
 @media (min-width: 600px)
   .bulk-pair
     display: flex
@@ -740,11 +890,20 @@ td.sticky-col
     .col-sm-8
       flex: 1 1 auto
 
-    .q-input,
-    .q-select,
-    .q-toggle
-      margin-top: 0
-      margin-bottom: 0
+/* Allow long calendar URLs to be scrolled inside the input */
+.calendar-url-col
+  min-width: 0
+
+.calendar-url-input
+  white-space: nowrap
+  overflow-x: auto
+  -webkit-overflow-scrolling: touch
+
+@media (min-width: 600px)
+  .calendar-url-activity
+    flex: 9 1 90%
+  .calendar-url-public
+    flex: 1 1 10%
 </style>
 
 <script>
@@ -752,6 +911,7 @@ td.sticky-col
 import axios from 'axios'
 import { useAuth } from '../services/auth.js'
 import orbitSchedules from 'src/services/orbitSchedules.js'
+import MarkdownEditor from 'src/components/MarkdownEditor.vue'
 
 const USE_ORBIT = true
 
@@ -775,13 +935,13 @@ const api = axios.create({
 
 const columns = [
   { name: 'select', label: '', field: 'select', align: 'center', sortable: false, style: 'width:56px' },
-  { name: 'date', align: 'center', labelKey: 'termschedules.date_label', field: 'date', sortable: true, classes: 'sticky-col', headerClass: 'sticky-col' },
+  { name: 'date', align: 'center', labelKey: 'termschedules.date_label', field: 'date', sortable: true, classes: 'sticky-col', headerClass: 'sticky-col', style: 'min-width:110px; max-width:140px' },
   { name: 'name', align: 'center', labelKey: 'termschedules.name_label', field: 'name', sortable: true },
   { name: 'description', align: 'center', labelKey: 'termschedules.description_label', field: 'description', sortable: true },
   { name: 'responsible', align: 'center', labelKey: 'termschedules.responsible_label', field: 'responsible', sortable: true },
   { name: 'devotional', align: 'center', labelKey: 'termschedules.devotional_label', field: 'devotional', sortable: true },
   { name: 'cant_come', align: 'center', labelKey: 'termschedules.cant_come_label', field: 'cant_come', sortable: true },
-  { name: 'notes', align: 'center', labelKey: 'termschedules.notes_label', field: 'notes' },
+  { name: 'notes', align: 'center', labelKey: 'termschedules.notes_label', field: 'notes', classes: 'notes-col' },
   { name: 'public_event', align: 'center', labelKey: 'termschedules.public', field: 'public_event' },
   { name: 'actions', align: 'center', labelKey: '', field: 'actions' },
 ]
@@ -891,7 +1051,7 @@ const defaultRows = [
 ]
 export default {
   name: 'TermSchedules',
-
+  components: { MarkdownEditor },
 
   data() {
     return {
@@ -909,6 +1069,11 @@ export default {
       users: [],
       terms: [],
       activities: [],
+      addEntryProcessing: false,
+      // bulk-edit progress state
+      bulkProcessing: false,
+      bulkProgressTotal: 0,
+      bulkProgressCount: 0,
           // Create term/activity UI state
           createTermDialogVisible: false,
           createActivityDialogVisible: false,
@@ -967,11 +1132,46 @@ export default {
             cant_come: false,
             public_event: false,
           },
+          // note preview dialog state
+          noteDialogVisible: false,
+          noteDialogHtml: '',
+          noteDialogTitle: '',
+          // allow expanding the detail dialog to full width per-row (opt-in)
+          detailFullWidth: false,
     };
   },
 
     async mounted() {
       this.setupAxiosInterceptors();
+      // If there are pending transforms persisted from a previous offline session,
+      // attempt to flush them before bootstrapping fresh server state to avoid
+      // server fetches overwriting optimistic local changes.
+      try {
+        if (typeof orbitSchedules !== 'undefined' && typeof orbitSchedules.getPendingQueue === 'function') {
+          const pq = await orbitSchedules.getPendingQueue()
+          if (Array.isArray(pq) && pq.length > 0) {
+            try {
+              // ensure websocket is open, then flush pending with a short timeout
+              if (typeof orbitSchedules.connectWebsocket === 'function') orbitSchedules.connectWebsocket()
+              const waitForWsOpen = async (timeout = 5000) => {
+                const start = Date.now()
+                while (Date.now() - start < timeout) {
+                  try { if (orbitSchedules.ws && orbitSchedules.ws.readyState === WebSocket.OPEN) return true } catch (e) {}
+                  // eslint-disable-next-line no-await-in-loop
+                  await new Promise(r => setTimeout(r, 150))
+                }
+                return false
+              }
+              const opened = await waitForWsOpen(4000)
+              if (opened && typeof orbitSchedules.flushPending === 'function') {
+                try {
+                  await orbitSchedules.flushPending()
+                } catch (e) { console.warn('mounted: flushPending failed', e) }
+              }
+            } catch (e) { console.warn('mounted: attempted pending flush failed', e) }
+          }
+        }
+      } catch (e) { console.warn('mounted: pending queue check failed', e) }
       await this.fetchUsers();
       await this.fetchTerms();
       // restore saved term/activity selections from localStorage
@@ -1036,6 +1236,7 @@ export default {
             // refetch scoped data and reload schedule for the new org
             await this.fetchTerms()
             await this.fetchActivities()
+            await this.fetchUsers()
             await this.loadScheduleAndEntries()
             // trigger org-level sync for the newly selected org
             try { if (USE_ORBIT && newVal) orbitSchedules.syncOrganization(newVal).catch(() => {}) } catch (e) {}
@@ -1267,6 +1468,91 @@ export default {
         if (el && typeof el.focus === 'function') el.focus();
       });
     },
+
+    // Render markdown to sanitized HTML (async). Falls back to a simple renderer when libs are not available.
+    async renderMarkdownToHtml(md) {
+      if (!md) return '';
+      try {
+        const markedMod = await import('marked')
+        const domMod = await import('dompurify')
+        const markedFn = markedMod && (markedMod.default || markedMod.marked || markedMod)
+        const dompurify = domMod && (domMod.default || domMod.sanitize || domMod)
+        let raw = ''
+        if (typeof markedFn === 'function') raw = markedFn(md)
+        else if (markedFn && typeof markedFn.parse === 'function') raw = markedFn.parse(md)
+        else raw = String(md)
+        try {
+          if (dompurify && typeof dompurify.sanitize === 'function') return dompurify.sanitize(raw)
+          if (dompurify && typeof dompurify === 'function') return dompurify(raw)
+          return raw
+        } catch (e) { return raw }
+      } catch (e) {
+        return this.renderPreviewFallback(md)
+      }
+    },
+
+    // Lightweight synchronous fallback renderer used for immediate previews
+    renderPreviewFallback(md) {
+      let s = String(md || '')
+      s = s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      s = s.replace(/```(?:([^\n]*?)\n)?([\s\S]*?)```/g, (_, _lang, code) => `<pre><code>${code.replace(/</g,'&lt;')}</code></pre>`)
+      s = s.replace(/`([^`]+)`/g, '<code>$1</code>')
+      s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+      s = s.replace(/\*(?!\*)(.+?)\*/g, '<em>$1</em>')
+      s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
+      s = s.replace(/(^|\n)[ \t]*([-*])[ \t]+(.+)(?=\n|$)/g, (m, pre, _dash, content) => `${pre}<li>${content}</li>`)
+      s = s.replace(/(?:<li>.*?<\/li>\s*)+/gs, m => `<ul>${m.replace(/\s+/g,'')}</ul>`)
+      const parts = s.split(/\n{2,}/).map(p => `<p>${p.replace(/\n/g, '<br/>')}</p>`)
+      return parts.join('')
+    },
+
+    // Prepare a preview HTML for a row (sets row._previewHtml synchronously then updates asynchronously)
+    prepareRowNotesPreview(row) {
+      try {
+        if (!row) return
+        const raw = row.notes || ''
+        // fast fallback preview synchronous
+        row._previewHtml = this.renderPreviewFallback(raw)
+        // async sanitized rendering
+        this.renderMarkdownToHtml(raw).then((html) => {
+          try { row._previewHtml = html } catch (e) {}
+        }).catch(() => {})
+      } catch (e) {}
+    },
+
+    // Heuristic: determine whether a row's notes are long enough to need a "read more" button
+    isLongNote(row) {
+      try {
+        const raw = row && (row.notes || '')
+        if (!raw) return false
+
+        // If the content contains explicit markdown headings or HTML headings, consider it long
+        if (typeof raw === 'string') {
+          if (/^#{1,6}\s+/m.test(raw)) return true
+          if (/<h[1-6]\b/i.test(raw)) return true
+        }
+
+        // Strip HTML angle brackets and measure plain-text length
+        const plain = String(raw).replace(/[<>]/g, '')
+        if (plain.length > 160) return true
+        const lines = plain.split(/\r?\n/).filter(Boolean)
+        if (lines.length > 2) return true
+        return false
+      } catch (e) { return false }
+    },
+
+    // Open a dialog showing the full rendered notes for a row
+    async openNoteDialog(row) {
+      try {
+        this.noteDialogTitle = (row && (row.name || row.title)) ? `${row.name || row.title}` : this.$t('termschedules.notes') || 'Notes'
+        this.noteDialogHtml = this.renderPreviewFallback(row && row.notes)
+        this.noteDialogVisible = true
+        try {
+          const html = await this.renderMarkdownToHtml(row && row.notes)
+          this.noteDialogHtml = html
+        } catch (e) {}
+      } catch (e) { console.warn('openNoteDialog failed', e) }
+    },
     // cleanup of orbit transform listener is handled in the component lifecycle beforeUnmount
     async saveChanges() {
       try {
@@ -1379,7 +1665,29 @@ export default {
     },
     async fetchUsers() {
       try {
-        const response = await api.get('user/user'); // Update the endpoint path
+        const auth = useAuth()
+        const params = {}
+        // Prefer explicit selectedOrganization; if not set, fall back to the user's single non-global assignment
+        let orgToUse = null
+        try {
+          if (auth.selectedOrganization != null) orgToUse = auth.selectedOrganization
+          else {
+            const assignments = auth.user?.attributes?.assignments || auth.user?.attributes?.assignments || []
+            const nonGlobal = assignments.find(a => a && a.role && !a.role.is_global)
+            if (assignments.length === 1 && nonGlobal && nonGlobal.organization_id) orgToUse = nonGlobal.organization_id
+          }
+        } catch (e) { orgToUse = null }
+        if (orgToUse != null) params.organization_id = orgToUse
+        // Fallback: if auth.selectedOrganization is not set yet, but localStorage contains a selection, use it.
+        try {
+          if (orgToUse == null && typeof localStorage !== 'undefined') {
+            const sid = localStorage.getItem('selected_organization')
+            const s = sid === 'null' ? null : sid
+            if (s != null) params.organization_id = s
+          }
+        } catch (e) {}
+        console.debug('fetchUsers params', params)
+        const response = await api.get('user/user', { params }); // Update the endpoint path
         this.users = response.data.data;
       } catch (error) {
         console.error('Error fetching users:', error);
@@ -1423,15 +1731,43 @@ export default {
         console.error('Error fetching activities:', error);
       }
     },
-    copyActivityPublicLink() {
+    async copyActivityPublicLink() {
       try {
-        const aid = this.normalizeToId(this.activity)
-        if (!aid) return
-        const url = `${window.location.origin}/api/calendars/activity/${aid}.ics`
-        navigator.clipboard.writeText(url)
+        const url = this.activityCalendarUrl
+        if (!url) return
+        if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+          await navigator.clipboard.writeText(url)
+        } else {
+          const ta = document.createElement('textarea')
+          ta.value = url
+          document.body.appendChild(ta)
+          ta.select()
+          document.execCommand('copy')
+          document.body.removeChild(ta)
+        }
         this.$q.notify({ type: 'positive', message: this.$t('termschedules.activity_link_copied') })
       } catch (e) {
         console.error('Failed to copy activity link', e)
+        this.$q.notify({ type: 'negative', message: this.$t('failed') })
+      }
+    },
+    async copyPublicCalendarLink() {
+      try {
+        const url = this.publicCalendarUrl
+        if (!url) return
+        if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+          await navigator.clipboard.writeText(url)
+        } else {
+          const ta = document.createElement('textarea')
+          ta.value = url
+          document.body.appendChild(ta)
+          ta.select()
+          document.execCommand('copy')
+          document.body.removeChild(ta)
+        }
+        this.$q.notify({ type: 'positive', message: this.$t('termschedules.public_link_copied') })
+      } catch (e) {
+        console.error('Failed to copy public calendar link', e)
         this.$q.notify({ type: 'negative', message: this.$t('failed') })
       }
     },
@@ -1460,15 +1796,23 @@ export default {
         if (auth.selectedOrganization != null) params.organization_id = auth.selectedOrganization
 
         const response = await api.get('schedules', { params });
-        // Prefer a schedule that matches the selected term if multiple are returned
+        // Prefer a schedule that matches the selected term if multiple are returned.
+        // Also prefer a schedule scoped to the selected organization when available.
         let schedule = null;
         const schedules = response.data.data || [];
         if (schedules.length > 0) {
           if (selectedTermId) {
-            schedule = schedules.find((s) => s.relationships?.term?.data?.id === selectedTermId) || schedules[0];
-          } else {
-            schedule = schedules[0];
+            schedule = schedules.find((s) => String(s.term_id) === String(selectedTermId));
           }
+          // If not found by term, prefer a schedule that matches the selected organization
+          if (!schedule) {
+            const selOrg = auth.selectedOrganization != null ? String(auth.selectedOrganization) : null;
+            if (selOrg != null) {
+              schedule = schedules.find((s) => String(s.organization_id || '') === selOrg);
+            }
+          }
+          // fallback to the first schedule if nothing else matched
+          schedule = schedule || schedules[0];
         }
 
         if (!schedule) {
@@ -1489,7 +1833,35 @@ export default {
             term_id: termId,
             activity_id: activityId,
           }
-          if (auth.selectedOrganization != null) createPayload.organization_id = auth.selectedOrganization
+          // Prefer an explicit selected organization; otherwise inherit the activity's organization
+          let orgIdToUse = null
+          try {
+            if (auth.selectedOrganization != null) orgIdToUse = auth.selectedOrganization
+            else if (activityObj && activityObj.attributes && activityObj.attributes.organization_id) orgIdToUse = activityObj.attributes.organization_id
+            else {
+              // If user has exactly one non-global assignment, default to it
+              const assignments = auth.user?.attributes?.assignments || []
+              const nonGlobal = assignments.filter(a => a && a.role && !a.role.is_global)
+              if (nonGlobal.length === 1 && nonGlobal[0].organization_id) orgIdToUse = nonGlobal[0].organization_id
+            }
+          } catch (e) { orgIdToUse = null }
+
+          // If orgId is still null and the user is a superadmin or has multiple org assignments,
+          // require the user to select an organization rather than auto-creating a global schedule.
+          try {
+            const isSuper = !!(auth.user && auth.user.attributes && auth.user.attributes.role && auth.user.attributes.role.is_superadmin)
+            const assignments = auth.user?.attributes?.assignments || []
+            const nonGlobalCount = assignments.filter(a => a && a.role && !a.role.is_global).length
+            if (orgIdToUse == null && (isSuper || nonGlobalCount > 1)) {
+              this.$q.notify({ type: 'warning', message: this.$t('termschedules.select_org_before_create') })
+              this.scheduleId = null
+              this.rows = []
+              this.isLoadingEntries = false
+              return
+            }
+          } catch (e) {}
+
+          if (orgIdToUse != null) createPayload.organization_id = orgIdToUse
           const createResponse = await api.post('schedules', createPayload);
           schedule = createResponse.data.data;
         }
@@ -1536,6 +1908,8 @@ export default {
                 responsible: mapIdsToOptions(entry.responsible_ids),
                 devotional: mapIdsToOptions(entry.devotional_ids),
                 cant_come: mapIdsToOptions(entry.cant_come_ids),
+                // include lastModified so Orbit merging treats server rows as authoritative
+                lastModified: entry.lastModified || entry.last_modified || Date.now(),
                 notes: entry.notes,
                 public_event: entry.public_event,
               }))
@@ -1718,6 +2092,8 @@ export default {
       };
 
       const createdEntries = [];
+      const tasks = [];
+      const bulkPayloads = [];
       if (this.newEntry.frequency === 'none' || weekdays.length === 0) {
         const singleDate = new Date(this.newEntry.start_date);
         if (isNaN(singleDate.getTime())) {
@@ -1735,16 +2111,15 @@ export default {
             devotional_ids: [],
             cant_come_ids: [],
           };
-          try {
-            if (USE_ORBIT) {
-              await orbitSchedules.createEntry(this.scheduleId, Object.assign({ id: null }, payload))
-            } else {
-              const resp = await api.post(`schedules/${this.scheduleId}/entries`, payload);
-              createdEntries.push(resp.data.data);
+            try {
+              if (USE_ORBIT) {
+                tasks.push(orbitSchedules.createEntry(this.scheduleId, Object.assign({ id: null }, payload)))
+              } else {
+                bulkPayloads.push(payload)
+              }
+            } catch (err) {
+              console.error('Error creating single entry:', err);
             }
-          } catch (err) {
-            console.error('Error creating single entry:', err);
-          }
         }
       } else {
         // iterate week mondays from start to end
@@ -1780,10 +2155,9 @@ export default {
             };
             try {
               if (USE_ORBIT) {
-                await orbitSchedules.createEntry(this.scheduleId, Object.assign({ id: null }, payload))
+                tasks.push(orbitSchedules.createEntry(this.scheduleId, Object.assign({ id: null }, payload)))
               } else {
-                const resp = await api.post(`schedules/${this.scheduleId}/entries`, payload);
-                createdEntries.push(resp.data.data);
+                bulkPayloads.push(payload)
               }
             } catch (err) {
               console.error('Error creating recurring entry:', err);
@@ -1794,8 +2168,27 @@ export default {
         }
       }
 
-      await this.fetchEntries();
-      this.addEntryDialogVisible = false;
+      this.addEntryProcessing = true
+      try {
+        if (tasks.length > 0) {
+          await Promise.all(tasks)
+        }
+        // If we collected bulk payloads for REST, send them in a single request
+        try {
+          if (bulkPayloads.length > 0) {
+            const resp = await api.post(`schedules/${this.scheduleId}/entries/bulk`, bulkPayloads)
+            if (resp && resp.data && Array.isArray(resp.data.data)) {
+              createdEntries.push(...resp.data.data)
+            }
+          }
+        } catch (e) {
+          console.error('Bulk create failed', e)
+        }
+        await this.fetchEntries();
+        this.addEntryDialogVisible = false;
+      } finally {
+        this.addEntryProcessing = false
+      }
       // If exactly one entry was created, open its detail dialog on small screens.
       if (createdEntries.length === 1 && this.$q.screen.lt.sm) {
         const first = createdEntries[0];
@@ -2204,6 +2597,14 @@ export default {
       }
       const selectedIds = this.selectedRows.map((r) => (r && r.id) ? r.id : r);
       const errors = [];
+      // initialize progress and collect updates
+      this.bulkProcessing = true
+      this.bulkProgressTotal = selectedIds.length
+      this.bulkProgressCount = 0
+
+      const restUpdates = [];
+      const orbitUpdates = [];
+
       for (const id of selectedIds) {
         const payload = {};
         if (this.bulkApply.name) payload.name = this.bulkForm.name;
@@ -2287,18 +2688,219 @@ export default {
         if (this.bulkApply.devotional) payload.devotional_ids = this.extractIds(this.bulkForm.devotional);
         if (this.bulkApply.cant_come) payload.cant_come_ids = this.extractIds(this.bulkForm.cant_come);
         if (this.bulkApply.public_event) payload.public_event = this.bulkForm.public_event;
+        // accumulate updates for Orbit or REST
+        if (USE_ORBIT) {
+          try { console.debug('saveBulkChanges: orbit update payload', { id, payload }) } catch (e) {}
+          orbitUpdates.push(Object.assign({ id }, payload));
+        } else {
+          try { console.debug('saveBulkChanges: REST accumulate payload', { id, payload }) } catch (e) {}
+          restUpdates.push(Object.assign({ id }, payload));
+        }
+      }
 
+      // Prefer using the REST bulk endpoint for bulk updates (even when using Orbit for realtime sync).
+      // This makes bulk edits fast and server-canonical while leaving Orbit active for other operations.
+      const PREFER_BULK_REST = true
+      if (PREFER_BULK_REST && orbitUpdates.length > 0) {
+        restUpdates.push(...orbitUpdates)
+        orbitUpdates.length = 0
+      }
+
+      // If REST bulk updates are present, send them in one request.
+      // If offline, enqueue a bulk transform into Orbit's pending queue and apply locally.
+      if (restUpdates.length > 0) {
         try {
-          if (USE_ORBIT) {
-            try { console.debug('saveBulkChanges: orbit update payload', { id, payload }) } catch (e) {}
-            await orbitSchedules.updateEntry(this.scheduleId, Object.assign({ id }, payload));
+          try { console.debug('saveBulkChanges: REST bulk payload size', restUpdates.length) } catch (e) {}
+          // Filter out client-local placeholder ids prior to sending to the server
+          const filteredRest = restUpdates.filter(u => !(typeof u.id === 'string' && u.id.startsWith('local-')))
+          try { console.debug('saveBulkChanges: filtered REST payload size', filteredRest.length) } catch (e) {}
+
+          // Normalize assignment arrays to enforce cant_come rules before sending
+          const _normArr = (arr) => {
+            if (!Array.isArray(arr)) return []
+            return arr.map(x => (x && typeof x === 'object') ? (x.value || x.id || x.user_id || x) : x).filter(Boolean)
+          }
+          for (const u of filteredRest) {
+            try {
+              const existing = (this.rows || []).find(r => String(r.id) === String(u.id)) || {}
+              const existingCant = _normArr(existing.cant_come || existing.cant_come_ids || [])
+              const newCant = (u.cant_come_ids !== undefined) ? _normArr(u.cant_come_ids) : existingCant
+              const cantSet = new Set((newCant || []).map(String))
+
+              // Baseline responsible/devotional arrays: prefer explicit payload values,
+              // otherwise fall back to the currently stored values. Then always
+              // filter out any users present in the cant_come set so they are removed.
+              const baseResponsible = (u.responsible_ids !== undefined) ? _normArr(u.responsible_ids) : _normArr(existing.responsible || existing.responsible_ids || [])
+              const baseDevotional = (u.devotional_ids !== undefined) ? _normArr(u.devotional_ids) : _normArr(existing.devotional || existing.devotional_ids || [])
+
+              u.responsible_ids = baseResponsible.filter(id => !cantSet.has(String(id)))
+              u.devotional_ids = baseDevotional.filter(id => !cantSet.has(String(id)))
+
+              if (u.cant_come_ids !== undefined) {
+                u.cant_come_ids = newCant
+              }
+            } catch (e) {
+              /* tolerate normalization errors */
+            }
+          }
+
+          const online = (typeof navigator !== 'undefined' ? navigator.onLine : true)
+          const orbitStatus = (orbitSchedules && typeof orbitSchedules.getSyncStatus === 'function') ? orbitSchedules.getSyncStatus() : { connected: false }
+          const wsConnected = !!(orbitStatus && orbitStatus.connected)
+
+          if (!online || !wsConnected) {
+            // Offline fallback: apply updates locally and enqueue a bulk transform
+            try {
+              // Build full row objects by merging current rows with update patches
+              const prepared = filteredRest.map(u => {
+                const id = u.id
+                const existing = (this.rows || []).find(r => String(r.id) === String(id)) || {}
+                return Object.assign({}, existing, {
+                  id: id,
+                  schedule_id: this.scheduleId,
+                  date: u.date !== undefined ? u.date : (existing.date || null),
+                  start: u.start !== undefined ? u.start : (existing.start || null),
+                  end: u.end !== undefined ? u.end : (existing.end || null),
+                  name: u.name !== undefined ? u.name : (existing.name || ''),
+                  description: u.description !== undefined ? u.description : (existing.description || ''),
+                  notes: u.notes !== undefined ? u.notes : (existing.notes || ''),
+                  public_event: u.public_event !== undefined ? u.public_event : !!existing.public_event,
+                  responsible_ids: u.responsible_ids !== undefined ? u.responsible_ids : (existing.responsible_ids || []),
+                  devotional_ids: u.devotional_ids !== undefined ? u.devotional_ids : (existing.devotional_ids || []),
+                  cant_come_ids: u.cant_come_ids !== undefined ? u.cant_come_ids : (existing.cant_come_ids || []),
+                })
+              })
+
+              // Enforce cant_come rules on prepared entries:
+              const __normArr = (arr) => {
+                if (!Array.isArray(arr)) return []
+                return arr.map(x => (x && typeof x === 'object') ? (x.value || x.id || x.user_id || x) : x).filter(Boolean)
+              }
+              for (const p of prepared) {
+                try {
+                  p.cant_come_ids = __normArr(p.cant_come_ids || p.cant_come || [])
+                  const cantSet = new Set((p.cant_come_ids || []).map(String))
+                  p.responsible_ids = __normArr(p.responsible_ids || p.responsible || []).filter(id => !cantSet.has(String(id)))
+                  p.devotional_ids = __normArr(p.devotional_ids || p.devotional || []).filter(id => !cantSet.has(String(id)))
+                  // ensure prepared rows look newer than any local copy so they overwrite
+                  // during the setLocalEntries merge (use current ts)
+                  try { p.lastModified = Date.now() } catch (e) {}
+                } catch (e) {}
+              }
+
+              // Persist locally and notify subscribers/UI. Sanitize rows to plain JSON first
+              try {
+                const sanitize = (arr) => {
+                  try {
+                    if (typeof structuredClone === 'function') return arr.map(a => structuredClone(a))
+                    return arr.map(a => JSON.parse(JSON.stringify(a)))
+                  } catch (e) {
+                    try { return arr.map(a => Object.assign({}, a)) } catch (ee) { return arr }
+                  }
+                }
+                const sanitizedPrepared = sanitize(prepared)
+                await orbitSchedules.setLocalEntries(this.scheduleId, sanitizedPrepared)
+                // replace prepared with sanitized version for the queued transform
+                prepared.length = 0
+                prepared.push(...sanitizedPrepared)
+              } catch (e) {
+                console.warn('saveBulkChanges: setLocalEntries failed', e)
+              }
+
+              // Enqueue a single bulk transform payload so it will be flushed on reconnect
+              try {
+                const payload = { type: 'transform', transform: { rows: { [this.scheduleId]: prepared } } }
+                // ensure payload is serializable before persisting
+                let safePayload = payload
+                try {
+                  if (typeof structuredClone === 'function') safePayload = structuredClone(payload)
+                  else safePayload = JSON.parse(JSON.stringify(payload))
+                } catch (e) {
+                  try { safePayload = JSON.parse(JSON.stringify(payload, (k,v)=> (typeof v === 'function' ? undefined : v))) } catch (ee) { /* fallthrough */ }
+                }
+                // sendTransform will persist to pending queue when offline
+                try {
+                  // Break the bulk rows payload into per-entry transforms so the
+                  // backend can persist create ops (it only persists op==='create').
+                  const msgs = prepared.map(entry => {
+                    const op = (entry && typeof entry.id === 'string' && entry.id.startsWith('local-')) ? 'create' : 'update'
+                    // ensure canonical id-arrays are present
+                    const ent = Object.assign({}, entry, {
+                      responsible_ids: Array.isArray(entry.responsible_ids) ? entry.responsible_ids : (Array.isArray(entry.responsible) ? entry.responsible : []),
+                      devotional_ids: Array.isArray(entry.devotional_ids) ? entry.devotional_ids : (Array.isArray(entry.devotional) ? entry.devotional : []),
+                      cant_come_ids: Array.isArray(entry.cant_come_ids) ? entry.cant_come_ids : (Array.isArray(entry.cant_come) ? entry.cant_come : []),
+                    })
+                    return { type: 'transform', transform: { op, scheduleId: this.scheduleId, entry: ent } }
+                  })
+
+                  // write synchronous fallback entries immediately to localStorage
+                  try {
+                    if (typeof localStorage !== 'undefined') {
+                      const raw = localStorage.getItem('orbit:pending_fallback')
+                      const arr = raw ? JSON.parse(raw) : []
+                      arr.push(...msgs)
+                      localStorage.setItem('orbit:pending_fallback', JSON.stringify(arr))
+                      console.debug('TermSchedules.saveBulkChanges: wrote immediate pending_fallback length', arr.length)
+                    }
+                  } catch (e) { console.warn('TermSchedules.saveBulkChanges: failed to write pending_fallback', e) }
+
+                  if (typeof orbitSchedules.sendTransform === 'function') {
+                    for (const m of msgs) {
+                      try { await orbitSchedules.sendTransform(m) } catch (e) { console.warn('saveBulkChanges: sendTransform failed for item', e) }
+                    }
+                  } else {
+                    // fallback: try to persist via pending queue apis
+                    try {
+                      const q = await (typeof orbitSchedules.getPendingQueue === 'function' ? orbitSchedules.getPendingQueue() : [])
+                      q.push(...msgs)
+                      if (typeof orbitSchedules.clearPending === 'function') await orbitSchedules.clearPending()
+                    } catch (e) { console.warn('saveBulkChanges: fallback pending persist failed', e) }
+                  }
+                } catch (e) { console.warn('saveBulkChanges: immediate fallback + sendTransform failed', e) }
+              } catch (e) { console.warn('saveBulkChanges: enqueue bulk transform failed', e) }
+
+              // consider the work done locally
+              this.bulkProgressCount = this.bulkProgressTotal
+            } catch (e) {
+              console.error('saveBulkChanges: offline bulk fallback failed', e)
+              errors.push({ id: null, error: e })
+            }
           } else {
-            try { console.debug('saveBulkChanges: REST PATCH payload', { id, payload }) } catch (e) {}
-            await api.patch(`entries/${id}`, payload);
+            // online + WS connected -> prefer REST bulk for canonical server update
+            const resp = await api.patch(`schedules/${this.scheduleId}/entries/bulk`, filteredRest)
+            this.bulkProgressCount = this.bulkProgressTotal
+            // If using Orbit local store, refresh it with authoritative server rows
+            try {
+              if (USE_ORBIT && resp && resp.data && Array.isArray(resp.data.data) && orbitSchedules && typeof orbitSchedules.setLocalEntries === 'function') {
+                const mapIdsToOptions = (ids) => {
+                  if (!Array.isArray(ids)) return [];
+                  return ids.map((id) => {
+                    const found = this.formattedUsers.find((u) => u.value === id);
+                    return found || { label: String(id), value: id };
+                  });
+                };
+                const serverRows = resp.data.data.map((entry) => ({
+                  id: entry.id,
+                  date: entry.date,
+                  start: entry.start || (entry.date ? `${entry.date}T00:00` : null),
+                  end: entry.end || (entry.date ? `${entry.date}T23:59` : null),
+                  name: entry.name,
+                  description: entry.description,
+                  responsible: mapIdsToOptions(entry.responsible_ids),
+                  devotional: mapIdsToOptions(entry.devotional_ids),
+                  cant_come: mapIdsToOptions(entry.cant_come_ids),
+                  // include lastModified so Orbit merging treats server rows as authoritative
+                  lastModified: entry.lastModified || entry.last_modified || Date.now(),
+                  notes: entry.notes,
+                  public_event: entry.public_event,
+                }))
+                try { await orbitSchedules.setLocalEntries(this.scheduleId, serverRows) } catch (e) { console.warn('saveBulkChanges: orbit setLocalEntries failed', e) }
+              }
+            } catch (e) { console.warn('saveBulkChanges: refresh orbit failed', e) }
           }
         } catch (err) {
-          console.error('Bulk update failed for', id, err);
-          errors.push({ id, error: err });
+          console.error('Bulk REST update failed', err)
+          errors.push({ id: null, error: err })
         }
       }
 
@@ -2306,6 +2908,7 @@ export default {
       try { await this.fetchEntries() } catch (e) { console.warn('saveBulkChanges: refresh failed', e) }
       this.selectedIds = [];
       this.bulkDialogVisible = false;
+      this.bulkProcessing = false
       if (errors.length) {
         // show a simple alert for now
         alert(`Bulk update completed with ${errors.length} errors`);
@@ -2326,6 +2929,13 @@ export default {
     activity() {
       this.loadScheduleAndEntries();
     }
+    ,
+    rows: {
+      handler(newRows) {
+        try { if (Array.isArray(newRows)) newRows.forEach(r => this.prepareRowNotesPreview(r)) } catch (e) {}
+      },
+      deep: false,
+    }
   },
 
   computed: {
@@ -2337,6 +2947,20 @@ export default {
           value: user.id,
           name: user.attributes.display_name,
         }));
+    },
+
+    activityCalendarUrl() {
+      try {
+        const origin = (typeof window !== 'undefined' && window.location && window.location.origin) ? window.location.origin : ''
+        const id = this.normalizeToId(this.activity)
+        return id ? `${origin}/api/calendars/activity/${id}.ics` : ''
+      } catch (e) { return '' }
+    },
+    publicCalendarUrl() {
+      try {
+        const origin = (typeof window !== 'undefined' && window.location && window.location.origin) ? window.location.origin : ''
+        return `${origin}/api/calendars/public.ics`
+      } catch (e) { return '' }
     },
 
     selectedRows() {

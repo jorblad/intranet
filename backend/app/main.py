@@ -1,14 +1,23 @@
 from pathlib import Path
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
-from app.api.routes import auth, schedules, taxonomy, users, ws, rbac, calendars
+from app.api.routes import auth, schedules, taxonomy, users, ws, rbac, calendars, admin_messages, settings
 from app.core.config import ALLOWED_ORIGINS, STATIC_DIR
 from app.db.init_db import init_db
 
-app = FastAPI(title="Intranet API")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # perform synchronous DB initialization at startup (kept simple here)
+    init_db()
+    yield
+
+
+app = FastAPI(title="Intranet API", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -25,11 +34,8 @@ app.include_router(schedules.router, prefix="/api")
 app.include_router(ws.router, prefix="/api")
 app.include_router(rbac.router, prefix="/api")
 app.include_router(calendars.router, prefix="/api")
-
-
-@app.on_event("startup")
-def on_startup() -> None:
-    init_db()
+app.include_router(admin_messages.router, prefix="/api")
+app.include_router(settings.router, prefix="/api")
 
 
 static_dir = Path(STATIC_DIR)

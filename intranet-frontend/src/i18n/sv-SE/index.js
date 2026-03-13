@@ -18,8 +18,10 @@ export default {
     roles: 'Roller',
     permissions: 'Behörigheter',
     orgs: 'Orgs',
+    settings: 'Inställningar',
     org: 'Organisation',
     assignments: 'Tilldelningar',
+    messages: 'Meddelanden',
   },
   adminPermissions: {
     codename: 'Kodnamn',
@@ -44,6 +46,18 @@ export default {
     search: 'Sök användare',
     no_users: 'Inga användare',
     user: 'Användare',
+    invite_user: 'Bjud in användare',
+    add_assignment: 'Lägg till tilldelning',
+    send_email: 'Skicka inbjudningsmail',
+    organization: 'Organisation',
+    role: 'Roll',
+    language: 'Språk',
+    email: 'E-post',
+    invalid_email: 'Ogiltig e-postadress',
+    sent_email: 'Inbjudningsmail skickat',
+    failed_send_email: 'Misslyckades med att skicka inbjudningsmail',
+    invite_sent: 'Inbjudan skickad',
+    invite_failed: 'Misslyckades med att skicka inbjudan',
     load_failed: 'Misslyckades med att ladda användare',
     username_password_required: 'Användarnamn och lösenord krävs',
     created: 'Användare skapad',
@@ -53,6 +67,19 @@ export default {
     update_failed: 'Misslyckades med att uppdatera användare',
     deleted: 'Användare borttagen',
     delete_failed: 'Misslyckades med att ta bort användare'
+    ,
+    reset_password: 'Återställ lösenord',
+    reset_success: 'Lösenord återställt: {pw}',
+    reset_failed: 'Misslyckades med att återställa lösenordet',
+    copy_close: 'Kopiera och stäng'
+    ,
+    send_reset_link: 'Skicka återställningslänk',
+    reset_link_sent: 'Återställningslänk skickad',
+    reset_link_failed: 'Misslyckades med att skicka återställningslänk',
+    copy_success: 'Lösenord kopierat'
+    ,
+    reset_confirm: 'Återställ lösenord för {name}? Detta kommer att skapa ett nytt lösenord.',
+    delete_confirm: 'Ta bort användaren {name}?'
   },
   adminAssignments: {
     user: 'Användare',
@@ -85,6 +112,14 @@ export default {
     regenerate_token: 'Återställ token',
     token_regenerated: 'Token återställd',
     link_copied: 'Länk kopierad'
+    ,
+    personal_calendar_label: 'Personlig kalender (delbar)',
+    calendar_id_label: 'Kalender-ID',
+    copy_personal_calendar: 'Kopiera personlig kalenderlänk',
+    copy_calendar_id: 'Kopiera kalender-ID'
+    ,
+    personal_calendar_activities: 'Aktiviteter i den personliga kalendern',
+    personal_calendar_activities_hint: 'Välj aktiviteter att inkludera i den delbara personliga kalenderns URL (valfritt)'
   },
   orgs: {
     new_placeholder: 'Ny organisation',
@@ -109,7 +144,12 @@ export default {
     username: 'Användarnamn',
     password: 'Lösenord',
     submit: 'Logga in',
-    bad_credentials: 'Fel användarnamn eller lösenord'
+    bad_credentials: 'Fel användarnamn eller lösenord',
+    sign_in: 'Logga in på ditt konto',
+    forgot_password: 'Glömt lösenord?',
+    forgot_title: 'Glömt ditt lösenord?',
+    forgot_help: 'Ange ditt användarnamn eller e-post för att få en återställningslänk.',
+    reset_sent_notice: 'Om ett konto finns så skickar vi ett återställningsmail.'
   },
   error: {
     '404_message': 'Hoppsan. Ingenting här...',
@@ -124,13 +164,23 @@ export default {
   termschedules: {
     title: 'Scheman',
     save: 'Spara',
+    select_org_before_create: 'Vänligen välj en organisation innan du skapar ett schema',
     cancel: 'Avbryt',
     new_row: 'Ny rad',
     add_rows: 'Lägg till rader',
+    upcoming: 'kommande aktiviteter',
     responsible_label: 'Ansvarig',
     devotional_label: 'Andakt',
     cant_come_label: 'Kommer inte',
     public: 'Publik',
+    language: 'Språk',
+    invite_user: 'Bjud in användare',
+    invite_sent: 'Inbjudan skickad',
+    invite_failed: 'Misslyckades med att skicka inbjudan',
+    organization: 'Organisation',
+    role: 'Roll',
+    add_assignment: 'Lägg till tilldelning',
+    send_email: 'Skicka inbjudningsmail',
     edit: 'Redigera',
     delete: 'Ta bort',
     bulk_edit: 'Redigera flera',
@@ -139,9 +189,9 @@ export default {
     bulk_delete_confirm_text: 'Är du säker på att du vill ta bort de valda raderna?',
     select_all_visible: 'Välj alla synliga',
     copy_activity_calendar: 'Kopiera aktivitetskalenderlänk',
-    activity_link_copied: 'Aktivitetskalenderlänk kopierad'
-
-  ,
+    activity_link_copied: 'Aktivitetskalenderlänk kopierad',
+    copy_public_calendar: 'Kopiera publik kalenderlänk',
+    public_link_copied: 'Publik kalenderlänk kopierad',
     term: 'Termin',
     activity: 'Aktivitet',
     details: 'Detaljer',
@@ -158,11 +208,17 @@ export default {
     apply_time_only: 'Endast tid',
     start_label: 'Start',
     end_label: 'Slut'
+    ,
+    activity_calendar_url: 'Publik aktivitetskalenderlänk',
+    public_calendar_url: 'Publik kalenderlänk'
   }
   ,
   termschedules_extras: {
     copy_activity_calendar: 'Kopiera aktivitetskalenderlänk',
     activity_link_copied: 'Aktivitetskalenderlänk kopierad'
+    ,
+    copy_public_calendar: 'Kopiera publik kalenderlänk',
+    public_link_copied: 'Publik kalenderlänk kopierad'
   }
 
   ,common: {
@@ -171,8 +227,92 @@ export default {
     edit: 'Redigera',
     delete: 'Ta bort',
     cancel: 'Avbryt',
+    readMore: 'Läs mer',
+    readLess: 'Visa mindre',
     save: 'Spara',
-    create: 'Skapa'
+    create: 'Skapa',
+    close: 'Stäng'
+  },
+  adminMessages: {
+    title: 'Adminmeddelanden',
+    newMessage: 'Nytt meddelande',
+    noActiveMessages: '(inga aktiva meddelanden)',
+    newAdminMessage: 'Nytt administratörsmeddelande',
+    editMessage: 'Redigera meddelande',
+    choose_icon: 'Välj ikon',
+    search_icons: 'Sök ikoner',
+    title_label: 'Rubrik',
+    body_label: 'Innehåll',
+    start_optional: 'Start (valfritt)',
+    end_optional: 'Slut (valfritt)',
+    leave_empty_hint: 'Lämna tomt för att behålla meddelandet tills det tas bort manuellt.',
+    priority_label: 'Prioritet',
+    priority_help: 'Högre tal = högre prioritet (visas först). Meddelanden med samma prioritet sorteras efter starttid.',
+    placement_label: 'Placering',
+    placement_frontpage: 'Startsida',
+    placement_banner: 'Banner',
+    preview: 'Förhandsvisning',
+    banner_limit_note: 'Banners stödjer endast begränsad markdown; avancerad styling och rå HTML tas bort.',
+    organization_label: 'Organisation',
+    delete_confirm: 'Radera detta meddelande?',
+    title_required: 'Rubrik krävs',
+    select_organization_required: 'Vänligen välj en organisation',
+    created: 'Meddelande skapat',
+    updated: 'Meddelande uppdaterat',
+    create_failed: 'Misslyckades med att skapa meddelandet',
+    update_failed: 'Misslyckades med att uppdatera meddelandet',
+    permission_global_required: 'Endast globala administratörer kan ange ett globalt meddelande',
+    permission_modify_global: 'Du har inte behörighet att ändra globala meddelanden',
+    range: {
+      always: 'Alltid',
+      from: 'Från {date}',
+      until: 'Till {date}'
+    }
+  },
+  adminSettings: {
+    title: 'Admininställningar',
+    mailjet_api_key: 'Mailjet API-nyckel',
+    mailjet_api_secret: 'Mailjet API-hemlighet',
+    mailjet_sender: 'Mailjet avsändaradress',
+    default_user_language: 'Standardanvändarspråk',
+    frontend_base_url: 'Frontend-bas-URL',
+    frontend_base_help: 'Ange den fullständiga frontend-URL:en (inkl. https://). Inbjudningslänkar byggs som {frontend_base_url}/invite/accept?token=...',
+    invite_language_select: 'Språk för inbjudningsmall',
+    invite_subject: 'Ämne för inbjudningsmail',
+    invite_html: 'Inbjudningsmail (HTML)',
+    invite_text: 'Inbjudningsmail (ren text)',
+    invite_help: 'Använd {link} i mallen där inbjudnings-URL:en ska infogas. Du kan även använda {username} och {display} i mallen (t.ex. "Ditt användarnamn är {username}"). För HTML-mallar kan du använda: <a href="{link}">denna länk</a>.',
+    save_success: 'Inställningar sparade',
+    save_failed: 'Misslyckades med att spara inställningar',
+    load_failed: 'Misslyckades med att ladda inställningar',
+    invalid_email: 'Ogiltig e-postadress',
+    mailjet_require_all: 'Om du anger Mailjet-inställningar måste du ange nyckel, hemlighet och avsändare.',
+    secret_hidden: 'Dolt (endast superadministratörer)',
+    reveal_secret: 'Visa hemlighet',
+    hide_secret: 'Dölj hemlighet',
+    configured: 'Konfigurerad',
+    edit_super_only: 'Endast superadministratörer kan ändra dessa inställningar',
+    invalid_language: 'Valt språk är inte tillgängligt'
+    ,
+    test_email_label: 'Testmottagarens e-post',
+    test_email_placeholder: 'du at example.com',
+    test_send: 'Skicka testmail',
+    test_send_success: 'Testmail skickat',
+    test_send_failed: 'Misslyckades med att skicka testmail'
+    ,
+    password_reset_language_select: 'Språk för återställningsmail',
+    password_reset_subject: 'Ämne för återställningsmail',
+    password_reset_html: 'Återställningsmail (HTML)',
+    password_reset_text: 'Återställningsmail (ren text)',
+    password_reset_help: 'Använd {link} i mallen där återställnings-URL:en ska infogas. Du kan även använda {username} och {display} i mallarna.'
+    ,
+    test_send_reset: 'Skicka test-återställningsmail',
+    test_send_reset_success: 'Test-återställningsmail skickat',
+    test_send_reset_failed: 'Misslyckades med att skicka test-återställningsmail'
+  },
+  dateTimePicker: {
+    label: 'Datum och tid',
+    set: 'Ange'
   },
   admin: {
     roles: {
@@ -254,5 +394,12 @@ export default {
   resources: {
     activity: 'Aktivitet',
     schedule: 'Schema'
+  }
+  ,
+  languages: {
+    'en-US': 'English (US)',
+    'sv-SE': 'Svenska',
+    'en': 'English',
+    'sv': 'Svenska'
   }
 }
