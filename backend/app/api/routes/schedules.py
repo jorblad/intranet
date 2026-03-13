@@ -28,7 +28,6 @@ from app.crud import (
 from app.db.session import get_db
 from app.schemas.entry import EntryCreate, EntryUpdate, EntryBulkUpdate
 from typing import List
-from typing import List
 from app.schemas.entry import EntryBase
 from app.schemas.schedule import ScheduleCreate, ScheduleUpdate
 import asyncio
