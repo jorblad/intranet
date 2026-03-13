@@ -3,20 +3,20 @@
     <form @submit.prevent="submit">
       <q-card style="min-width:320px; max-width:420px;">
         <q-card-section>
-          <div class="text-h6">Set your password</div>
+          <div class="text-h6">{{ $t('inviteAccept.setPasswordTitle') }}</div>
         </q-card-section>
         <q-card-section>
-          <div v-if="loading" class="text-caption">Loading invite...</div>
+          <div v-if="loading" class="text-caption">{{ $t('inviteAccept.loadingInvite') }}</div>
           <div v-else>
             <div v-if="!tokenValid" class="q-mb-sm text-negative">
-              <div class="text-subtitle2">Invalid or expired invite token.</div>
+              <div class="text-subtitle2">{{ $t('inviteAccept.invalidOrExpiredToken') }}</div>
               <pre v-if="debugInfo && process.env.DEV" style="margin-top:8px; white-space:pre-wrap; color:var(--q-color-grey-4)">{{ JSON.stringify(debugInfo, null, 2) }}</pre>
             </div>
             <div v-else class="q-mb-sm">
-              <div class="text-subtitle2">Username: <strong>{{ username }}</strong></div>
-              <div v-if="displayName" class="text-caption">Display name: {{ displayName }}</div>
-              <q-input v-model="password" type="password" label="Password" dense />
-              <q-input v-model="confirm" type="password" label="Confirm password" dense class="q-mt-sm" />
+              <div class="text-subtitle2">{{ $t('inviteAccept.username') }} <strong>{{ username }}</strong></div>
+              <div v-if="displayName" class="text-caption">{{ $t('inviteAccept.displayName') }} {{ displayName }}</div>
+              <q-input v-model="password" type="password" :label="$t('inviteAccept.password')" dense />
+              <q-input v-model="confirm" type="password" :label="$t('inviteAccept.confirmPassword')" dense class="q-mt-sm" />
             </div>
           </div>
         </q-card-section>
