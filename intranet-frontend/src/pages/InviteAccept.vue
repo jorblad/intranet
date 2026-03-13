@@ -92,7 +92,7 @@ onMounted(() => {
 })
 
 function goLogin() {
-  router.push({ name: 'index' })
+  router.push({ path: '/login' })
 }
 
 async function submit() {
