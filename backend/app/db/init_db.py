@@ -1,6 +1,7 @@
 import time
 import uuid
 import os
+import secrets
 from datetime import date
 
 from sqlalchemy import exc as sa_exc
@@ -88,7 +89,14 @@ def init_db() -> None:
             # Create only the admin user. Username/password can be provided
             # via environment variables `ADMIN_USERNAME` and `ADMIN_PASSWORD`.
             admin_username = os.getenv("ADMIN_USERNAME", "admin")
-            admin_password = os.getenv("ADMIN_PASSWORD") or "password"
+            admin_password = os.getenv("ADMIN_PASSWORD")
+            if not admin_password:
+                admin_password = secrets.token_urlsafe(16)
+                print(
+                    "init_db: No ADMIN_PASSWORD provided; generated a temporary admin "
+                    f"password for user '{admin_username}': {admin_password}. "
+                    "Please change this password immediately after first login."
+                )
             admin = User(
                 id=str(uuid.uuid4()),
                 username=admin_username,
