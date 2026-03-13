@@ -89,6 +89,30 @@ def _superadmin_user():
 # TestClient factory: wires a fixed user and shared DB into the app
 # ---------------------------------------------------------------------------
 
+
+class OverrideClearingTestClient(TestClient):
+    """
+    TestClient that clears FastAPI dependency overrides when it is cleaned up.
+
+    This helps prevent leakage of app.dependency_overrides between tests.
+    """
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        try:
+            return super().__exit__(exc_type, exc_val, exc_tb)
+        finally:
+            # Ensure overrides do not leak into subsequent tests
+            app.dependency_overrides = {}
+
+    def __del__(self):
+        # Best-effort cleanup in case the client is not used as a context manager
+        try:
+            app.dependency_overrides = {}
+        except Exception:
+            # Avoid raising during interpreter shutdown
+            pass
+
+
 def _client(db, user):
     def override_db():
         yield db
@@ -98,7 +122,7 @@ def _client(db, user):
 
     app.dependency_overrides[get_db] = override_db
     app.dependency_overrides[get_current_user] = override_user
-    client = TestClient(app)
+    client = OverrideClearingTestClient(app)
     return client
 
 
