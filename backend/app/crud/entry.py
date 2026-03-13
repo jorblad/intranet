@@ -152,6 +152,7 @@ def _update_entry_in_session(
     responsible_ids: list[str] | None,
     devotional_ids: list[str] | None,
     cant_come_ids: list[str] | None,
+    commit: bool = True,
 ) -> ScheduleEntry:
     if date is not None:
         entry.date = date
@@ -185,8 +186,9 @@ def _update_entry_in_session(
         entry.responsible_users = _resolve_users(db, r_ids)
         entry.devotional_users = _resolve_users(db, d_ids)
         entry.cant_come_users = _resolve_users(db, c_ids)
-    return entry
-
+    if commit:
+        db.commit()
+        db.refresh(entry)
 
 def update_entry(
     db: Session,
@@ -229,8 +231,13 @@ def delete_entry(db: Session, entry: ScheduleEntry) -> None:
 def bulk_update_entries(db: Session, schedule_id: str, updates: list[dict]) -> list[ScheduleEntry]:
     """Apply multiple entry updates in a single transaction and return updated objects.
 
+                commit=False,
     Each update dict must include 'id' and any update fields.
     """
+        db.commit()
+        # refresh updated entries to mirror update_entry's default behavior
+        for entry in updated:
+            db.refresh(entry)
     updated = []
     skipped = []
     try:
