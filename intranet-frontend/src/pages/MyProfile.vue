@@ -245,7 +245,7 @@ async function regenerateToken() {
 
 async function copyPersonalUrl() {
   if (!personalCalendarUrl.value) {
-    $q.notify({ type: 'negative', message: 'No personal calendar URL available — regenerate token first.' })
+    $q.notify({ type: 'negative', message: t('profile.no_personal_calendar_url') })
     return
   }
   try {
