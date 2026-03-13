@@ -29,7 +29,7 @@ services:
       # Admin credentials used by the DB init script. Override via environment
       # or a .env file.
       - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
-      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-change-me}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:?ADMIN_PASSWORD must be set (no default admin password)}
     ports:
       - "8000:8000"
       - "8200:8000"
