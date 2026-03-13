@@ -19,7 +19,7 @@
             <q-tooltip anchor="bottom middle">{{ getOrgLabel(m.organization_id) }}</q-tooltip>
           </q-chip>
         </div>
-        <div v-if="m.body" class="banner-body md-render" v-html="renderBannerBody(m.body)"></div>
+        <div v-if="bannerBodies[m.id]" class="banner-body md-render" v-html="bannerBodies[m.id]"></div>
       </div>
     </q-banner>
   </div>
@@ -42,28 +42,34 @@ export default defineComponent({
     organizationId: { type: [String, null], default: null },
   },
   methods: {
-    renderBannerBody (body) {
-      if (!body) {
-        return ''
-      }
-      // Render markdown to HTML and sanitize before injecting into the DOM.
-      const rawHtml = renderToHtml(body)
-      return DOMPurify.sanitize(rawHtml)
-    },
   },
   setup (props) {
     const messages = ref([])
     const renderedHtml = ref({})
+    const bannerBodies = ref({})
     const auth = useAuth()
     const { t } = useI18n()
+
+    const processBannerBodies = async () => {
+      const bodies = {}
+      for (const m of messages.value) {
+        if (m && m.id != null && m.body) {
+          const rawHtml = await renderToHtml(m.body)
+          bodies[m.id] = DOMPurify.sanitize(rawHtml)
+        }
+      }
+      bannerBodies.value = bodies
+    }
 
     const load = async () => {
       try {
         const items = await fetchAdminMessages(props.organizationId, 'banner')
         messages.value = items || []
+        await processBannerBodies()
         processRendered().catch(() => {})
       } catch (e) {
         messages.value = []
+        bannerBodies.value = {}
       }
     }
 
