@@ -107,7 +107,7 @@ def personal_calendar(
     activity_id: Optional[List[str]] = Query(None, description="Filter by activity id (repeatable)"),
 ):
     # include entries where user is responsible or devotional, but exclude if user can't come
-    entries = (
+    entries_query = (
         db.query(ScheduleEntry)
         .options(
             selectinload(ScheduleEntry.responsible_users),
@@ -115,8 +115,11 @@ def personal_calendar(
             selectinload(ScheduleEntry.cant_come_users),
             selectinload(ScheduleEntry.schedule),
         )
-        .all()
     )
+    # Apply activity_id filtering at the SQL level to avoid loading unnecessary rows
+    if activity_id:
+        entries_query = entries_query.filter(ScheduleEntry.activity_id.in_(activity_id))
+    entries = entries_query.all()
     cal_lines = [
         "BEGIN:VCALENDAR",
         "VERSION:2.0",
