@@ -24,16 +24,17 @@
 
       <div class="col-12 col-md-4">
         <div class="text-subtitle2 q-mb-xs">{{ t('adminMessages.preview') || 'Preview' }}</div>
-        <div class="md-preview q-pa-sm md-render" v-html="previewHtml"></div>
+        <div class="md-preview q-pa-sm md-render" v-html="sanitizedPreviewHtml"></div>
       </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, watch, nextTick } from 'vue'
+import { ref, watch, nextTick, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { renderToHtml } from 'src/utils/markdown'
+import DOMPurify from 'dompurify'
 
 const props = defineProps({ modelValue: { type: String, default: '' }, minRows: { type: Number, default: 4 } })
 const emit = defineEmits(['update:modelValue'])
@@ -42,6 +43,7 @@ const { t } = useI18n()
 const localValue = ref(props.modelValue)
 const taRef = ref(null)
 const previewHtml = ref('')
+const sanitizedPreviewHtml = computed(() => DOMPurify.sanitize(previewHtml.value))
 let previewTimer = null
 
 watch(() => props.modelValue, v => { localValue.value = v })
