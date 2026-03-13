@@ -187,16 +187,28 @@ def admin_messages_update(msg_id: str, payload: AdminMessageUpdate, db: Session 
     else:
         require_org_admin_or_superadmin(_user, msg.organization_id)
 
+    # Build update payload, only including fields that were actually provided by the client
+    update_data = payload.dict(exclude_unset=True)
+
     # If changing target organization, validate the target org and require permission for it
-    if payload.organization_id is not None and payload.organization_id != msg.organization_id:
-        # require permission on new organization
-        require_org_admin_or_superadmin(_user, payload.organization_id)
-        from app.crud.organization import get_organization
+    if "organization_id" in update_data and update_data.get("organization_id") != msg.organization_id:
+        new_org_id = update_data.get("organization_id")
+        if new_org_id is None:
+            # Moving message to global scope requires global org admin or superadmin
+            if not _has_global_org_admin(_user):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Requires global org admin or superadmin to move messages to global scope",
+                )
+        else:
+            # require permission on new organization
+            require_org_admin_or_superadmin(_user, new_org_id)
+            from app.crud.organization import get_organization
 
-        if not get_organization(db, payload.organization_id):
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found")
+            if not get_organization(db, new_org_id):
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found")
 
-    updated = update_admin_message(db, msg, **payload.dict())
+    updated = update_admin_message(db, msg, **update_data)
     # publish update event for realtime clients
     try:
         payload_event = {"type": "admin_message", "action": "update", "message": {
