@@ -98,7 +98,7 @@ export function setSelectedOrganization(orgId) {
     if (normalized == null) {
       localStorage.removeItem('selected_organization')
     } else {
-      localStorage.setItem('selected_organization', String(normalized))
+      localStorage.setItem('selected_organization', normalized)
     }
   } catch (e) {
     // ignore

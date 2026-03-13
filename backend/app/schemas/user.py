@@ -47,3 +47,8 @@ class InviteCreate(BaseModel):
     assignments: list[InviteAssignment] | None = None
     send_email: bool | None = True
     expires_hours: int | None = 48
+
+
+class InviteAccept(BaseModel):
+    token: str
+    password: str
