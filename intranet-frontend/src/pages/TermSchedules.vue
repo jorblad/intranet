@@ -1532,8 +1532,8 @@ export default {
           if (/<h[1-6]\b/i.test(raw)) return true
         }
 
-        // Strip HTML tags and measure plain-text length
-        const plain = String(raw).replace(/<[^>]+>/g, '')
+        // Strip HTML angle brackets and measure plain-text length
+        const plain = String(raw).replace(/[<>]/g, '')
         if (plain.length > 160) return true
         const lines = plain.split(/\r?\n/).filter(Boolean)
         if (lines.length > 2) return true
