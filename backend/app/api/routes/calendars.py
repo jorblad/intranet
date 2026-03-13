@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.api.routes.auth import get_current_user
 from app.db.session import get_db
-from app.models import ScheduleEntry, User
+from app.models import ScheduleEntry, User, Schedule
 from app.crud.organization import list_organizations_for_user
 import datetime
 
@@ -118,7 +118,9 @@ def personal_calendar(
     )
     # Apply activity_id filtering at the SQL level to avoid loading unnecessary rows
     if activity_id:
-        entries_query = entries_query.filter(ScheduleEntry.activity_id.in_(activity_id))
+        entries_query = entries_query.filter(
+            ScheduleEntry.schedule.has(Schedule.activity_id.in_(activity_id))
+        )
     entries = entries_query.all()
     cal_lines = [
         "BEGIN:VCALENDAR",
