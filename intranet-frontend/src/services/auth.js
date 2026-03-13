@@ -74,7 +74,7 @@ export async function fetchOrganizations() {
         const ok = state.organizations.some(o => String(o.id) === String(sid))
         if (!ok) {
           state.selectedOrganization = null
-          try { localStorage.setItem('selected_organization', String(null)) } catch (e) {}
+          try { localStorage.removeItem('selected_organization') } catch (e) {}
         }
       }
     } catch (e) {}
@@ -95,7 +95,11 @@ export function setSelectedOrganization(orgId) {
 
   state.selectedOrganization = normalized
   try {
-    localStorage.setItem('selected_organization', String(normalized))
+    if (normalized == null) {
+      localStorage.removeItem('selected_organization')
+    } else {
+      localStorage.setItem('selected_organization', String(normalized))
+    }
   } catch (e) {
     // ignore
   }
