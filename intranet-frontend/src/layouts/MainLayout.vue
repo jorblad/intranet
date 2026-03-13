@@ -259,10 +259,28 @@ export default defineComponent({
         return false
       }
     })
-    if (!isInviteAccept.value) {
+
+    // Ensure we only fetch auth data once, and not on the invite-accept page
+    const hasFetchedAuth = ref(false)
+    const runAuthFetchIfNeeded = () => {
+      if (hasFetchedAuth.value || isInviteAccept.value) {
+        return
+      }
+      hasFetchedAuth.value = true
       fetchCurrentUser()
       fetchOrganizations()
     }
+
+    // Initial fetch when not on invite-accept
+    runAuthFetchIfNeeded()
+
+    // If the app started on invite-accept and later navigates away without reload,
+    // trigger the fetch once when isInviteAccept transitions from true -> false.
+    watch(isInviteAccept, (newVal, oldVal) => {
+      if (oldVal === true && newVal === false) {
+        runAuthFetchIfNeeded()
+      }
+    })
 
     const { t } = useI18n()
 
