@@ -95,32 +95,60 @@ function goLogin() {
 
 async function submit() {
   if (!token.value) {
-    $q.notify({ type: 'negative', message: 'Missing invite token' })
+    $q.notify({ type: 'negative', message: t('inviteAccept.missingInviteToken') })
     return
   }
   if (!password.value) {
-    $q.notify({ type: 'warning', message: 'Please provide a password' })
+    $q.notify({ type: 'warning', message: t('inviteAccept.pleaseProvidePassword') })
     return
   }
   if (password.value !== confirm.value) {
-    $q.notify({ type: 'warning', message: 'Passwords do not match' })
+    $q.notify({ type: 'warning', message: t('inviteAccept.passwordsDoNotMatch') })
     return
   }
 
   try {
     if (!tokenValid.value) {
-      $q.notify({ type: 'negative', message: 'Missing or invalid invite token' })
+      $q.notify({ type: 'negative', message: t('inviteAccept.missingOrInvalidInviteToken') })
       return
     }
     // Backend expects token and password in the POST body
     await axios.post('/api/user/invite/accept', { token: token.value, password: password.value })
-    $q.notify({ type: 'positive', message: 'Password set — you may now log in' })
+    $q.notify({ type: 'positive', message: t('inviteAccept.passwordSetSuccess') })
     router.push({ path: '/login' })
   } catch (err) {
-    $q.notify({ type: 'negative', message: err.response?.data?.detail || 'Failed to accept invite' })
+    $q.notify({
+      type: 'negative',
+      message: err.response?.data?.detail || t('inviteAccept.failedToAcceptInvite')
+    })
   }
 }
 </script>
+
+<i18n>
+{
+  "en-US": {
+    "inviteAccept": {
+      "missingInviteToken": "Missing invite token",
+      "pleaseProvidePassword": "Please provide a password",
+      "passwordsDoNotMatch": "Passwords do not match",
+      "missingOrInvalidInviteToken": "Missing or invalid invite token",
+      "passwordSetSuccess": "Password set — you may now log in",
+      "failedToAcceptInvite": "Failed to accept invite"
+    }
+  },
+  "sv-SE": {
+    "inviteAccept": {
+      "missingInviteToken": "Inbjudningstoken saknas",
+      "pleaseProvidePassword": "Ange ett lösenord",
+      "passwordsDoNotMatch": "Lösenorden stämmer inte överens",
+      "missingOrInvalidInviteToken": "Ogiltig eller saknad inbjudningstoken",
+      "passwordSetSuccess": "Lösenordet är sparat – du kan nu logga in",
+      "failedToAcceptInvite": "Kunde inte acceptera inbjudan"
+    }
+  }
+}
+</i18n>
 
 <style scoped>
 </style>
