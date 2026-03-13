@@ -6,6 +6,13 @@ from app.core.rbac import require_org_admin_or_superadmin
 from app.core.rbac import require_superadmin
 from app.core.rbac import user_assigned_to_org, is_superadmin
 from app.models import Schedule
+
+# TestClient-based route tests for schedules/entries bulk APIs
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+import sys
+import types
+from types import SimpleNamespace
 from app.crud import (
     create_entry,
     create_schedule,
@@ -351,7 +358,131 @@ def entries_bulk_update(
     return {"data": [_entry_to_dict(e) for e in updated]}
 
 
-@router.post("/schedules/{schedule_id}/entries/bulk", status_code=status.HTTP_201_CREATED)
+# --- Embedded route-level tests for entries_bulk_update ---
+# These tests use FastAPI's TestClient to exercise the bulk update endpoint
+# for authorization behavior and payload handling semantics.
+
+def _build_test_app():
+    """
+    Construct a minimal FastAPI app including this router for TestClient-based tests.
+    """
+    app = FastAPI()
+    app.include_router(router)
+    return app
+
+
+def _set_fake_bulk_update_entries(fake_func):
+    """
+    Ensure that `from app.crud.entry import bulk_update_entries` inside
+    entries_bulk_update resolves to `fake_func` during tests by populating
+    sys.modules['app.crud.entry'].
+    """
+    # Ensure package structure exists
+    if "app" not in sys.modules:
+        sys.modules["app"] = types.ModuleType("app")
+    if "app.crud" not in sys.modules:
+        crud_mod = types.ModuleType("app.crud")
+        sys.modules["app.crud"] = crud_mod
+    else:
+        crud_mod = sys.modules["app.crud"]
+
+    entry_mod_name = "app.crud.entry"
+    entry_mod = types.ModuleType(entry_mod_name)
+    entry_mod.bulk_update_entries = fake_func
+    sys.modules[entry_mod_name] = entry_mod
+
+
+def _override_schedule_and_rbac(app, schedule_obj, assigned_to_org: bool, superadmin: bool):
+    """
+    Override get_schedule, user_assigned_to_org, and is_superadmin behavior
+    for tests by monkeypatching symbols in this module.
+    """
+    # Override get_schedule by dependency override on get_db combined with local closure.
+    # We patch at module level since get_schedule is imported, not a dependency.
+    global get_schedule, user_assigned_to_org, is_superadmin
+
+    original_get_schedule = get_schedule
+    original_user_assigned_to_org = user_assigned_to_org
+    original_is_superadmin = is_superadmin
+
+    def fake_get_schedule(_db, _schedule_id):
+        return schedule_obj
+
+    def fake_user_assigned_to_org(_user, _org_id):
+        return assigned_to_org
+
+    def fake_is_superadmin(_user):
+        return superadmin
+
+    get_schedule = fake_get_schedule
+    user_assigned_to_org = fake_user_assigned_to_org
+    is_superadmin = fake_is_superadmin
+
+    # Return a restore function so each test can clean up.
+    def restore():
+        global get_schedule, user_assigned_to_org, is_superadmin
+        get_schedule = original_get_schedule
+        user_assigned_to_org = original_user_assigned_to_org
+        is_superadmin = original_is_superadmin
+
+    return restore
+
+
+def _override_dependencies(app, user):
+    """
+    Override get_current_user and get_db for tests to avoid touching real auth/DB.
+    """
+    def fake_get_current_user():
+        return user
+
+    def fake_get_db():
+        class DummyDB:
+            pass
+
+        return DummyDB()
+
+    app.dependency_overrides[get_current_user] = fake_get_current_user
+    app.dependency_overrides[get_db] = fake_get_db
+
+
+def test_entries_bulk_update_forbidden_for_user_not_assigned_to_org():
+    """
+    (1) 403 for users not assigned to the org.
+    """
+    app = _build_test_app()
+    _override_dependencies(app, user={"id": "user-1"})
+
+    # Schedule with an organization; user is not assigned and not superadmin.
+    schedule = SimpleNamespace(id="sched-1", organization_id="org-1")
+    restore = _override_schedule_and_rbac(app, schedule, assigned_to_org=False, superadmin=False)
+
+    # We don't need bulk_update_entries here because the request should be rejected
+    # by authorization before any DB logic executes.
+    client = TestClient(app)
+
+    response = client.patch(
+        f"/schedules/{schedule.id}/entries/bulk",
+        json=[{"id": "entry-1"}],
+    )
+
+    restore()
+
+    assert response.status_code == status.HTTP_403_FORBIDDEN
+    assert response.json().get("detail") == "Not authorized to update entries for this schedule"
+
+
+def test_entries_bulk_update_success_path_updates():
+    """
+    (2) Success path: authorized user gets 200 and updated entries.
+    """
+    app = _build_test_app()
+    _override_dependencies(app, user={"id": "user-2"})
+
+    schedule = SimpleNamespace(id="sched-2", organization_id="org-2")
+    restore = _override_schedule_and_rbac(app, schedule, assigned_to_org=True, superadmin=False)
+
+    def fake_bulk_update_entries(_db, _schedule, payload):
+        # Echo back payload as "updated" entries with an extra field to prove it ran.
 def entries_bulk_create(
     schedule_id: str,
     payload: List[EntryCreate],
