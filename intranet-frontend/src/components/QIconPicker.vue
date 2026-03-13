@@ -90,7 +90,6 @@ export default defineComponent({
       // Ensure fonts and CSS are injected (idempotent)
       await ensureFontAwesomeLoaded().catch(() => {})
       // Prefer public mirror first so Vite doesn't try to transform node_modules JSON
-      const base = '/node_modules/@fortawesome/fontawesome-free'
       const candidates = [
         '/fontawesome-free/metadata/icon-families.json',
         '/assets/fontawesome-free/metadata/icon-families.json',
