@@ -20,7 +20,7 @@ from app.core.mailer import send_invite_mail
 from app.models import User
 from app.db.session import get_db
 from app.schemas.user import UserCreate, UserUpdate
-from app.schemas.user import UserSelfUpdate, InviteCreate
+from app.schemas.user import UserSelfUpdate, InviteCreate, InviteAccept
 from app.crud.user import regenerate_calendar_token
 import os
 from datetime import datetime, timezone
@@ -650,7 +650,9 @@ def password_reset_request(payload: dict, request: Request, db: Session = Depend
 
 
 @router.post('/user/invite/accept')
-def accept_invite(token: str, password: str, db: Session = Depends(get_db)):
+def accept_invite(payload: InviteAccept, db: Session = Depends(get_db)):
+    token = payload.token
+    password = payload.password
     inv = get_invitation_by_token(db, token)
     if not inv:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invalid invite token")

@@ -127,6 +127,26 @@ export default defineComponent({
       } catch (e) {}
     }
 
+    function sanitizeUrl(rawUrl) {
+      if (!rawUrl) return ''
+      const url = String(rawUrl).trim()
+      if (!url) return ''
+      const lower = url.toLowerCase()
+      // Disallow dangerous schemes
+      if (lower.startsWith('javascript:') || lower.startsWith('data:') || lower.startsWith('vbscript:')) {
+        return ''
+      }
+      // Allow http, https, mailto, tel, protocol-relative, and relative URLs
+      return url
+    }
+
+    function escapeAttribute(value) {
+      return String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;')
+    }
+
     async function renderToHtml(md) {
       if (!md) return ''
       try {
@@ -151,7 +171,18 @@ export default defineComponent({
         s = s.replace(/`([^`]+)`/g, '<code>$1</code>')
         s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
         s = s.replace(/\*(?!\*)(.+?)\*/g, '<em>$1</em>')
-        s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
+        s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (match, text, url) => {
+          const safeUrl = sanitizeUrl(url)
+          const safeText = String(text)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+          if (!safeUrl) {
+            // If URL is not safe, render just the text without a link
+            return safeText
+          }
+          return `<a href="${escapeAttribute(safeUrl)}" target="_blank" rel="noopener noreferrer">${safeText}</a>`
+        })
         s = s.replace(/(^|\n)[ \t]*([-*])[ \t]+(.+)(?=\n|$)/g, (m, pre, _dash, content) => `${pre}<li>${content}</li>`)
         s = s.replace(/(?:<li>.*?<\/li>\s*)+/gs, m => `<ul>${m.replace(/\s+/g,'')}</ul>`)
         const parts = s.split(/\n{2,}/).map(p => `<p>${p.replace(/\n/g, '<br/>')}</p>`)
