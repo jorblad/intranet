@@ -233,13 +233,8 @@ def delete_entry(db: Session, entry: ScheduleEntry) -> None:
 def bulk_update_entries(db: Session, schedule_id: str, updates: list[dict]) -> list[ScheduleEntry]:
     """Apply multiple entry updates in a single transaction and return updated objects.
 
-                commit=False,
     Each update dict must include 'id' and any update fields.
     """
-        db.commit()
-        # refresh updated entries to mirror update_entry's default behavior
-        for entry in updated:
-            db.refresh(entry)
     updated = []
     skipped = []
     try:
