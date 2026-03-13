@@ -30,7 +30,7 @@
 
             <div class="row items-center justify-between q-mt-md">
               <q-btn type="submit" color="primary" :label="$t('login.submit')" />
-              <q-btn flat @click="forgotDialogVisible = true" label="Forgot password?" />
+              <q-btn flat @click="forgotDialogVisible = true" :label="$t('login.forgot_password')" />
             </div>
           </q-form>
         </div>
