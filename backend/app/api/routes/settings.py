@@ -12,11 +12,25 @@ from urllib.parse import urlparse
 router = APIRouter()
 
 
+def _normalize_setting_value(value):
+    """
+    Normalize stored setting values so that an empty string used as a
+    sentinel for "no value" is exposed to API clients as None.
+    """
+    return None if value == '' else value
+
+
 @router.get('/admin/settings')
 def admin_settings(db: Session = Depends(get_db), _user=Depends(get_current_user)):
     require_superadmin(_user)
     # Return all stored settings (superadmins will see and may change them via PATCH)
-    return {"data": list_settings(db)}
+    settings = list_settings(db)
+    # Normalize any sentinel empty-string values to None for clients
+    normalized = {
+        key: _normalize_setting_value(value)
+        for key, value in (settings or {}).items()
+    }
+    return {"data": normalized}
 
 
 @router.get('/public/settings')
@@ -26,7 +40,7 @@ def public_settings(db: Session = Depends(get_db)):
     out = {}
     for k in keys:
         try:
-            out[k] = get_setting(db, k)
+            out[k] = _normalize_setting_value(get_setting(db, k))
         except Exception:
             out[k] = None
     return {"data": out}
@@ -38,8 +52,11 @@ def admin_update_settings(payload: dict, db: Session = Depends(get_db), _user=De
     updated = {}
     for k, v in (payload or {}).items():
         try:
-            s = set_setting(db, k, str(v) if v is not None else '')
-            updated[k] = s.value
+            # Preserve existing behavior of stringifying non-None values, but
+            # store None directly when the client sends null instead of using ''.
+            value_to_store = None if v is None else str(v)
+            s = set_setting(db, k, value_to_store)
+            updated[k] = _normalize_setting_value(getattr(s, 'value', None))
         except Exception:
             pass
     return {"data": updated}
