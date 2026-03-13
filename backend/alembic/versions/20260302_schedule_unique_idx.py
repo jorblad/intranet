@@ -39,14 +39,28 @@ def upgrade():
         # If deletion fails, let index creation fail so operator can manually inspect DB
         pass
 
-    # Create a uniqueness index to prevent future duplicates
-    op.create_index(
-        'ux_schedules_name_term_activity_org',
-        'schedules',
-        ['name', 'term_id', 'activity_id', 'organization_id'],
-        unique=True,
+    # Create a uniqueness index to prevent future duplicates.
+    # Use expression columns so that NULL organization_id (and activity_id) are
+    # normalized consistently with the cleanup above and treated as duplicates.
+    op.execute(
+        sa.text(
+            """
+            CREATE UNIQUE INDEX ux_schedules_name_term_activity_org
+            ON schedules (
+                name,
+                term_id,
+                coalesce(CAST(activity_id AS text), ''),
+                coalesce(CAST(organization_id AS text), '')
+            );
+            """
+        )
     )
 
 
 def downgrade():
-    op.drop_index('ux_schedules_name_term_activity_org', table_name='schedules')
+    # Drop the expression unique index created in upgrade()
+    op.execute(
+        sa.text(
+            "DROP INDEX IF EXISTS ux_schedules_name_term_activity_org;"
+        )
+    )
