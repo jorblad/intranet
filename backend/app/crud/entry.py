@@ -9,8 +9,12 @@ def list_entries(db: Session, schedule_id: str) -> list[ScheduleEntry]:
 
 def _ensure_list_ids(val):
     """Normalize various id-list shapes into a list of string ids."""
-    if not val:
+    if val is None:
         return []
+    # If a single string id is provided, wrap it in a list to avoid
+    # iterating over its characters.
+    if isinstance(val, str):
+        return [val] if val else []
     out = []
     try:
         for a in val:
