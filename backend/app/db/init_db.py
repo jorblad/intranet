@@ -88,7 +88,11 @@ def init_db() -> None:
         if not admin_user:
             # Create only the admin user. Username/password can be provided
             # via environment variables `ADMIN_USERNAME` and `ADMIN_PASSWORD`.
-            admin_username = os.getenv("ADMIN_USERNAME", "admin")
+            admin_password = os.getenv("ADMIN_PASSWORD")
+            if not admin_password:
+                raise RuntimeError(
+                    "Environment variable ADMIN_PASSWORD must be set when initializing the database."
+                )
             admin_password = os.getenv("ADMIN_PASSWORD")
             if not admin_password:
                 admin_password = secrets.token_urlsafe(16)
