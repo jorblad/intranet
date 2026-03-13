@@ -33,6 +33,7 @@ import { useI18n } from 'vue-i18n'
 import { fetchAdminMessages } from 'src/services/adminMessages'
 import orbitSchedules from 'src/services/orbitSchedules.js'
 import ensureFontAwesomeLoaded from 'src/plugins/fa-loader'
+import { renderToHtml } from 'src/utils/markdown'
 
 export default defineComponent({
   name: 'AdminBanners',
@@ -125,69 +126,6 @@ export default defineComponent({
           } catch (e) {}
         }
       } catch (e) {}
-    }
-
-    function sanitizeUrl(rawUrl) {
-      if (!rawUrl) return ''
-      const url = String(rawUrl).trim()
-      if (!url) return ''
-      const lower = url.toLowerCase()
-      // Disallow dangerous schemes
-      if (lower.startsWith('javascript:') || lower.startsWith('data:') || lower.startsWith('vbscript:')) {
-        return ''
-      }
-      // Allow http, https, mailto, tel, protocol-relative, and relative URLs
-      return url
-    }
-
-    function escapeAttribute(value) {
-      return String(value)
-        .replace(/&/g, '&amp;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#39;')
-    }
-
-    async function renderToHtml(md) {
-      if (!md) return ''
-      try {
-        const markedMod = await import('marked')
-        const domMod = await import('dompurify')
-        const markedFn = markedMod && (markedMod.default || markedMod.marked || markedMod)
-        const dompurify = domMod && (domMod.default || domMod.sanitize || domMod)
-        let raw = ''
-        if (typeof markedFn === 'function') raw = markedFn(md)
-        else if (markedFn && typeof markedFn.parse === 'function') raw = markedFn.parse(md)
-        else raw = String(md)
-        try {
-          if (dompurify && typeof dompurify.sanitize === 'function') return dompurify.sanitize(raw)
-          if (dompurify && typeof dompurify === 'function') return dompurify(raw)
-          return raw
-        } catch (e) { return raw }
-      } catch (e) {
-        // simple fallback
-        let s = String(md || '')
-        s = s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-        s = s.replace(/```(?:([^\n]*?)\n)?([\s\S]*?)```/g, (_, _lang, code) => `<pre><code>${code.replace(/</g,'&lt;')}</code></pre>`)
-        s = s.replace(/`([^`]+)`/g, '<code>$1</code>')
-        s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-        s = s.replace(/\*(?!\*)(.+?)\*/g, '<em>$1</em>')
-        s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (match, text, url) => {
-          const safeUrl = sanitizeUrl(url)
-          const safeText = String(text)
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-          if (!safeUrl) {
-            // If URL is not safe, render just the text without a link
-            return safeText
-          }
-          return `<a href="${escapeAttribute(safeUrl)}" target="_blank" rel="noopener noreferrer">${safeText}</a>`
-        })
-        s = s.replace(/(^|\n)[ \t]*([-*])[ \t]+(.+)(?=\n|$)/g, (m, pre, _dash, content) => `${pre}<li>${content}</li>`)
-        s = s.replace(/(?:<li>.*?<\/li>\s*)+/gs, m => `<ul>${m.replace(/\s+/g,'')}</ul>`)
-        const parts = s.split(/\n{2,}/).map(p => `<p>${p.replace(/\n/g, '<br/>')}</p>`)
-        return parts.join('')
-      }
     }
 
     async function processRendered() {

@@ -106,7 +106,7 @@ async function submit() {
       $q.notify({ type: 'negative', message: 'Missing or invalid invite token' })
       return
     }
-    // Backend expects token and password in the POST body (not as query params)
+    // Backend expects token and password in the POST body
     await axios.post('/api/user/invite/accept', { token: token.value, password: password.value })
     $q.notify({ type: 'positive', message: 'Password set — you may now log in' })
     router.push({ path: '/login' })
