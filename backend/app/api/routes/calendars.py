@@ -181,7 +181,11 @@ def personal_calendar_token(
     user = db.query(User).filter(User.calendar_token == token).first()
     if not user:
         return Response(content="", media_type="text/calendar", status_code=404)
-    entries = db.query(ScheduleEntry).all()
+    entries = (
+        db.query(ScheduleEntry)
+        .options(selectinload(ScheduleEntry.schedule))
+        .all()
+    )
     cal_lines = [
         "BEGIN:VCALENDAR",
         "VERSION:2.0",
