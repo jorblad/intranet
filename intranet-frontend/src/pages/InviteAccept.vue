@@ -10,7 +10,7 @@
           <div v-else>
             <div v-if="!tokenValid" class="q-mb-sm text-negative">
               <div class="text-subtitle2">{{ $t('inviteAccept.invalidOrExpiredToken') }}</div>
-              <pre v-if="debugInfo && process.env.DEV" style="margin-top:8px; white-space:pre-wrap; color:var(--q-color-grey-4)">{{ JSON.stringify(debugInfo, null, 2) }}</pre>
+              <pre v-if="debugInfo && isDev" style="margin-top:8px; white-space:pre-wrap; color:var(--q-color-grey-4)">{{ JSON.stringify(debugInfo, null, 2) }}</pre>
             </div>
             <div v-else class="q-mb-sm">
               <div class="text-subtitle2">{{ $t('inviteAccept.username') }} <strong>{{ username }}</strong></div>
@@ -47,6 +47,7 @@ const confirm = ref('')
 const username = ref('')
 const displayName = ref('')
 const loading = ref(false)
+const isDev = import.meta.env.DEV
 const tokenValid = ref(true)
 const debugInfo = ref(null)
 
