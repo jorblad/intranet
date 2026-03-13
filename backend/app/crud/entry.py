@@ -1,7 +1,9 @@
 from sqlalchemy.orm import Session
 
 from app.models import ScheduleEntry, User
+import logging
 
+logger = logging.getLogger(__name__)
 
 def list_entries(db: Session, schedule_id: str) -> list[ScheduleEntry]:
     return db.query(ScheduleEntry).filter(ScheduleEntry.schedule_id == schedule_id).all()
@@ -271,11 +273,9 @@ def bulk_update_entries(db: Session, schedule_id: str, updates: list[dict]) -> l
         # refresh updated entries before returning
         for entry in updated:
             db.refresh(entry)
-        try:
-            if skipped:
-                print(f"bulk_update_entries: skipped {len(skipped)} items: {skipped}")
-        except Exception:
-            pass
+        if skipped:
+            logger.info("bulk_update_entries: skipped %d items", len(skipped))
+            logger.debug("bulk_update_entries skipped details: %r", skipped)
         return updated
     except Exception:
         db.rollback()
