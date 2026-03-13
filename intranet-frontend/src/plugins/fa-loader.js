@@ -65,10 +65,12 @@ export default function ensureFontAwesomeLoaded () {
 
       // inject v5 font-face rules first then the main all.css
       for (const url of cssFaceCandidates) {
-        await injectCssIfExists(url)
+        const ok = await injectCssIfExists(url)
+        if (ok) break
       }
       for (const url of cssAllCandidates) {
-        await injectCssIfExists(url)
+        const ok = await injectCssIfExists(url)
+        if (ok) break
       }
 
       // Attempt to register explicit @font-face rules using found woff2 files

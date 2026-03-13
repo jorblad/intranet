@@ -43,8 +43,10 @@ export function setupInterceptors({ refreshEndpoint = '/oauth/token' } = {}) {
           } catch (e) {}
           if (typeof window !== 'undefined') {
             try {
-              const hash = String(window.location.hash || '')
-              if (!hash.includes('/invite/accept')) {
+              const location = window.location || {}
+              const hash = String(location.hash || '')
+              const pathname = String(location.pathname || '')
+              if (!hash.includes('/invite/accept') && !pathname.includes('/invite/accept')) {
                 window.location.href = '/login'
               }
             } catch (e) {}
@@ -74,8 +76,10 @@ export function setupInterceptors({ refreshEndpoint = '/oauth/token' } = {}) {
             } catch (e) {}
             if (typeof window !== 'undefined') {
               try {
-                const hash = String(window.location.hash || '')
-                if (!hash.includes('/invite/accept')) {
+                const location = window.location || {}
+                const hash = String(location.hash || '')
+                const pathname = String(location.pathname || '')
+                if (!hash.includes('/invite/accept') && !pathname.includes('/invite/accept')) {
                   window.location.href = '/login'
                 }
               } catch (e) {}

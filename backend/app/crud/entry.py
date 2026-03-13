@@ -9,8 +9,12 @@ def list_entries(db: Session, schedule_id: str) -> list[ScheduleEntry]:
 
 def _ensure_list_ids(val):
     """Normalize various id-list shapes into a list of string ids."""
-    if not val:
+    if val is None:
         return []
+    # If a single string id is provided, wrap it in a list to avoid
+    # iterating over its characters.
+    if isinstance(val, str):
+        return [val]
     out = []
     try:
         for a in val:
@@ -21,9 +25,9 @@ def _ensure_list_ids(val):
             else:
                 out.append(str(a))
     except Exception:
-        # Fallback: try to coerce the whole thing to string
+        # Fallback: try to coerce the whole thing to a single string id
         try:
-            return [str(v) for v in list(val)]
+            return [str(val)]
         except Exception:
             return []
     return out
@@ -139,7 +143,7 @@ def bulk_create_entries(db: Session, schedule_id: str, entries_data: list[dict])
         raise
 
 
-def update_entry(
+def _update_entry_in_session(
     db: Session,
     entry: ScheduleEntry,
     date,
@@ -152,6 +156,7 @@ def update_entry(
     responsible_ids: list[str] | None,
     devotional_ids: list[str] | None,
     cant_come_ids: list[str] | None,
+    commit: bool = True,
 ) -> ScheduleEntry:
     if date is not None:
         entry.date = date
@@ -185,9 +190,39 @@ def update_entry(
         entry.responsible_users = _resolve_users(db, r_ids)
         entry.devotional_users = _resolve_users(db, d_ids)
         entry.cant_come_users = _resolve_users(db, c_ids)
-    db.commit()
-    db.refresh(entry)
+    if commit:
+        db.commit()
+        db.refresh(entry)
     return entry
+
+def update_entry(
+    db: Session,
+    entry: ScheduleEntry,
+    date,
+    start,
+    end,
+    name: str | None,
+    description: str | None,
+    notes: str | None,
+    public_event: bool | None,
+    responsible_ids: list[str] | None,
+    devotional_ids: list[str] | None,
+    cant_come_ids: list[str] | None,
+) -> ScheduleEntry:
+    return _update_entry_in_session(
+        db,
+        entry,
+        date,
+        start,
+        end,
+        name,
+        description,
+        notes,
+        public_event,
+        responsible_ids,
+        devotional_ids,
+        cant_come_ids,
+    )
 
 
 def delete_entry(db: Session, entry: ScheduleEntry) -> None:
@@ -216,7 +251,7 @@ def bulk_update_entries(db: Session, schedule_id: str, updates: list[dict]) -> l
             if not entry:
                 skipped.append({'id': eid, 'reason': 'not found or wrong schedule'})
                 continue
-            entry = update_entry(
+            entry = _update_entry_in_session(
                 db,
                 entry,
                 u.get('date', None),
@@ -229,8 +264,13 @@ def bulk_update_entries(db: Session, schedule_id: str, updates: list[dict]) -> l
                 u.get('responsible_ids', None),
                 u.get('devotional_ids', None),
                 u.get('cant_come_ids', None),
+                commit=False,
             )
             updated.append(entry)
+        db.commit()
+        # refresh updated entries before returning
+        for entry in updated:
+            db.refresh(entry)
         try:
             if skipped:
                 print(f"bulk_update_entries: skipped {len(skipped)} items: {skipped}")

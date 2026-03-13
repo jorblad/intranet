@@ -5,18 +5,11 @@ import messages from 'src/i18n'
 import { useAuth } from 'src/services/auth'
 import axios from 'axios'
 
-export default boot(async ({ app }) => {
-  // Try server-provided default language for unauthenticated pages (login)
-  let serverDefault = null
-  try {
-    const res = await axios.get('/api/public/settings')
-    serverDefault = res?.data?.data?.default_user_language || res?.data?.data?.invite_default_language || null
-  } catch (e) {
-    // ignore network / 404 errors
-  }
-
-  // choose initial locale from localStorage, server default, or navigator
-  const initial = (typeof localStorage !== 'undefined' && localStorage.getItem('locale')) || serverDefault || (navigator && navigator.language) || 'en-US'
+export default boot(({ app }) => {
+  // choose initial locale from localStorage or navigator without waiting for network
+  const storedLocale = (typeof localStorage !== 'undefined' && localStorage.getItem('locale')) || null
+  const navigatorLocale = (typeof navigator !== 'undefined' && navigator.language) ? navigator.language : 'en-US'
+  const initial = storedLocale || navigatorLocale
   const locale = messages[initial] ? initial : (initial && initial.startsWith && initial.startsWith('sv') ? 'sv-SE' : 'en-US')
 
   const i18n = createI18n({
@@ -75,5 +68,42 @@ export default boot(async ({ app }) => {
     })
   } catch (e) {
     // ignore if reactive auth isn't available at boot time
+  }
+
+  // Fetch server-provided default language in the background and
+  // update the locale if the user has not explicitly chosen one.
+  try {
+    axios
+      .get('/api/public/settings', { timeout: 2000 })
+      .then((res) => {
+        const rawServerDefault =
+          res?.data?.data?.default_user_language ||
+          res?.data?.data?.invite_default_language ||
+          null
+
+        if (!rawServerDefault) {
+          return
+        }
+
+        const resolvedServerDefault = messages[rawServerDefault]
+          ? rawServerDefault
+          : (rawServerDefault.startsWith && rawServerDefault.startsWith('sv') ? 'sv-SE' : null)
+
+        if (!resolvedServerDefault) {
+          return
+        }
+
+        const hasStoredLocale =
+          typeof localStorage !== 'undefined' && !!localStorage.getItem('locale')
+
+        if (!hasStoredLocale && i18n.global.locale.value !== resolvedServerDefault) {
+          i18n.global.locale.value = resolvedServerDefault
+        }
+      })
+      .catch(() => {
+        // ignore network / 404 errors (including timeouts)
+      })
+  } catch (e) {
+    // ignore unexpected errors during background settings fetch
   }
 })

@@ -27,6 +27,7 @@ def list_organizations_for_user(db: Session, user_id: str):
         db.query(Organization)
         .join(UserOrganizationRole, UserOrganizationRole.organization_id == Organization.id)
         .filter(UserOrganizationRole.user_id == user_id)
+        .distinct()
         .all()
     )
 

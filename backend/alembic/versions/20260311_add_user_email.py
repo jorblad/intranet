@@ -23,10 +23,10 @@ def upgrade():
         user_cols = [c['name'] for c in inspector.get_columns('users')]
         if 'email' not in user_cols:
             op.add_column('users', sa.Column('email', sa.String(), nullable=True))
-        # create an index for email if missing
+        # create a unique index for email if missing to match the model constraint
         existing_idx = [i['name'] for i in inspector.get_indexes('users')]
         if 'ix_users_email' not in existing_idx:
-            op.create_index('ix_users_email', 'users', ['email'], unique=False)
+            op.create_index('ix_users_email', 'users', ['email'], unique=True)
 
 
 def downgrade():
