@@ -196,7 +196,7 @@ def admin_messages_update(msg_id: str, payload: AdminMessageUpdate, db: Session 
         if not get_organization(db, payload.organization_id):
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found")
 
-    updated = update_admin_message(db, msg, **payload.dict())
+    updated = update_admin_message(db, msg, **payload.model_dump())
     # publish update event for realtime clients
     try:
         payload_event = {"type": "admin_message", "action": "update", "message": {
