@@ -10,7 +10,7 @@
           <div v-else>
             <div v-if="!tokenValid" class="q-mb-sm text-negative">
               <div class="text-subtitle2">Invalid or expired invite token.</div>
-              <pre v-if="debugInfo" style="margin-top:8px; white-space:pre-wrap; color:var(--q-color-grey-4)">{{ JSON.stringify(debugInfo, null, 2) }}</pre>
+              <pre v-if="debugInfo && process.env.DEV" style="margin-top:8px; white-space:pre-wrap; color:var(--q-color-grey-4)">{{ JSON.stringify(debugInfo, null, 2) }}</pre>
             </div>
             <div v-else class="q-mb-sm">
               <div class="text-subtitle2">Username: <strong>{{ username }}</strong></div>
