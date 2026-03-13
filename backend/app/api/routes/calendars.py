@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, Response, Query
 from typing import List, Optional
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.api.routes.auth import get_current_user
 from app.db.session import get_db
@@ -24,6 +24,22 @@ def _fmt_dt_utc(dt: datetime.datetime) -> str:
 
 def _fmt_date(d: datetime.date) -> str:
     return d.strftime("%Y%m%d")
+
+
+def _ical_escape(value: Optional[str]) -> str:
+    """
+    Escape text for use in iCalendar (RFC 5545) text values.
+    Characters to escape: backslash, comma, semicolon, and newline.
+    """
+    if value is None:
+        return ""
+    s = str(value)
+    # The order of replacements matters: backslash must be escaped first.
+    s = s.replace("\\", "\\\\")
+    s = s.replace("\n", "\\n")
+    s = s.replace(",", "\\,")
+    s = s.replace(";", "\\;")
+    return s
 
 
 def _entry_to_vevent(entry: ScheduleEntry, public_only: bool = False, emoji_prefix: Optional[str] = None) -> str:
@@ -51,7 +67,8 @@ def _entry_to_vevent(entry: ScheduleEntry, public_only: bool = False, emoji_pref
     if emoji_prefix:
         # ensure a single space between prefix and name
         summary = f"{emoji_prefix} {summary}" if summary else emoji_prefix
-    lines.append(f"SUMMARY:{summary}")
+    escaped_summary = _ical_escape(summary)
+    lines.append(f"SUMMARY:{escaped_summary}")
     if not public_only:
         desc_parts = []
         if entry.description:
@@ -59,9 +76,10 @@ def _entry_to_vevent(entry: ScheduleEntry, public_only: bool = False, emoji_pref
         if entry.notes:
             desc_parts.append(entry.notes)
         if desc_parts:
-            # simplify newlines
-            desc = "\\n".join(desc_parts)
-            lines.append(f"DESCRIPTION:{desc}")
+            # join using real newlines; _ical_escape will convert to \n for ICS
+            desc = "\n".join(desc_parts)
+            escaped_desc = _ical_escape(desc)
+            lines.append(f"DESCRIPTION:{escaped_desc}")
 
     lines.append("END:VEVENT")
     return "\r\n".join(lines)
@@ -89,7 +107,16 @@ def personal_calendar(
     activity_id: Optional[List[str]] = Query(None, description="Filter by activity id (repeatable)"),
 ):
     # include entries where user is responsible or devotional, but exclude if user can't come
-    entries = db.query(ScheduleEntry).all()
+    entries = (
+        db.query(ScheduleEntry)
+        .options(
+            selectinload(ScheduleEntry.responsible_users),
+            selectinload(ScheduleEntry.devotional_users),
+            selectinload(ScheduleEntry.cant_come_users),
+            selectinload(ScheduleEntry.schedule),
+        )
+        .all()
+    )
     cal_lines = [
         "BEGIN:VCALENDAR",
         "VERSION:2.0",

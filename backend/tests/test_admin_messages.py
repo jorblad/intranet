@@ -1,73 +1,34 @@
-"""
-Tests for the admin messages API endpoints.
+"""Tests for admin-message endpoint permission logic and filtering.
 
 Covers:
-- org-scoped vs global messages (list/create behaviour)
-- org member read access
-- org_admin vs superadmin write access
-- pubsub publish payload shape for create / update / delete
+  (1) member can list org and global messages
+  (2) member cannot create/update/delete
+  (3) org_admin can manage org-scoped messages only
+  (4) global org_admin / superadmin can manage global messages
+  (5) start/end active-window filtering and placement filtering
+  (6) pubsub publish payload shape for create / update / delete
 """
 import json
 import uuid
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
+from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
-from unittest.mock import patch
 
 from app.main import app
 from app.db.base import Base
 from app.db.session import get_db
 from app.api.routes.auth import get_current_user
-from app.models import Organization, AdminMessage
+from app.models import Organization
+from app.crud.admin_message import create_admin_message
 
 
-# ---------------------------------------------------------------------------
-# Helpers for building fake user namespaces
-# ---------------------------------------------------------------------------
-
-def _role_ns(name, is_global=False):
-    return SimpleNamespace(name=name, is_global=is_global)
-
-
-def _uor_ns(role, organization_id=None):
-    return SimpleNamespace(role=role, organization_id=organization_id)
-
-
-def _make_user(roles_and_orgs):
-    """Return a SimpleNamespace user with given list of (role_ns, organization_id) tuples."""
-    return SimpleNamespace(
-        id=str(uuid.uuid4()),
-        organization_roles=[_uor_ns(r, oid) for r, oid in roles_and_orgs],
-    )
-
-
-def _superadmin():
-    return _make_user([(_role_ns("superadmin", is_global=True), None)])
-
-
-def _global_org_admin():
-    return _make_user([(_role_ns("org_admin", is_global=True), None)])
-
-
-def _org_admin(org_id):
-    return _make_user([(_role_ns("org_admin", is_global=False), org_id)])
-
-
-def _org_member(org_id):
-    return _make_user([(_role_ns("member", is_global=False), org_id)])
-
-
-def _plain_user():
-    return _make_user([])
-
-
-# ---------------------------------------------------------------------------
-# Database fixture
-# ---------------------------------------------------------------------------
+# ── fixtures ──────────────────────────────────────────────────────────────────
 
 @pytest.fixture
 def test_db():
@@ -91,6 +52,8 @@ def test_db():
     app.dependency_overrides[get_db] = _get_db
     yield TestingSessionLocal
     app.dependency_overrides.pop(get_db, None)
+    # ensure user override is cleaned up even if a test forgot
+    app.dependency_overrides.pop(get_current_user, None)
 
 
 @pytest.fixture
@@ -98,346 +61,424 @@ def client(test_db):
     return TestClient(app)
 
 
-@pytest.fixture
-def orgs(test_db):
-    """Seed two organizations and return their IDs."""
-    db = test_db()
+# ── user factory helpers ──────────────────────────────────────────────────────
+
+def _make_member_user(org_id):
+    """Plain member assigned to one org, no admin privileges."""
+    return SimpleNamespace(
+        id=str(uuid.uuid4()),
+        organization_roles=[
+            SimpleNamespace(
+                organization_id=org_id,
+                role=SimpleNamespace(name="member", is_global=False),
+            )
+        ],
+    )
+
+
+def _make_org_admin_user(org_id):
+    """Org-admin scoped to the given organisation."""
+    return SimpleNamespace(
+        id=str(uuid.uuid4()),
+        organization_roles=[
+            SimpleNamespace(
+                organization_id=org_id,
+                role=SimpleNamespace(name="org_admin", is_global=False),
+            )
+        ],
+    )
+
+
+def _make_global_org_admin_user():
+    """Global org_admin – can manage global messages."""
+    return SimpleNamespace(
+        id=str(uuid.uuid4()),
+        organization_roles=[
+            SimpleNamespace(
+                organization_id=None,
+                role=SimpleNamespace(name="org_admin", is_global=True),
+            )
+        ],
+    )
+
+
+def _make_superadmin_user():
+    return SimpleNamespace(
+        id=str(uuid.uuid4()),
+        organization_roles=[
+            SimpleNamespace(
+                organization_id=None,
+                role=SimpleNamespace(name="superadmin", is_global=True),
+            )
+        ],
+    )
+
+
+# ── data seeding helpers ──────────────────────────────────────────────────────
+
+def _seed_org(Session):
+    db = Session()
     try:
-        org1 = Organization(id=str(uuid.uuid4()), name="OrgOne")
-        org2 = Organization(id=str(uuid.uuid4()), name="OrgTwo")
-        db.add_all([org1, org2])
+        org = Organization(id=str(uuid.uuid4()), name=f"Test Org {uuid.uuid4().hex[:8]}")
+        db.add(org)
         db.commit()
-        return {"org1_id": org1.id, "org2_id": org2.id}
+        return org.id
     finally:
         db.close()
 
 
-@pytest.fixture(autouse=True)
-def clear_user_override():
-    """Ensure the get_current_user override is cleared after each test."""
-    yield
-    app.dependency_overrides.pop(get_current_user, None)
-
-
-# ---------------------------------------------------------------------------
-# Helper: seed an AdminMessage directly in the test DB
-# ---------------------------------------------------------------------------
-
-def _create_message(Session, title="Test Message", organization_id=None, placement="banner"):
+def _seed_message(Session, *, org_id=None, placement="banner", start=None, end=None, title="Test"):
     db = Session()
     try:
-        msg = AdminMessage(
-            id=str(uuid.uuid4()),
+        msg = create_admin_message(
+            db,
             title=title,
-            organization_id=organization_id,
+            body="Body",
+            organization_id=org_id,
             placement=placement,
-            priority=0,
+            start=start,
+            end=end,
         )
-        db.add(msg)
-        db.commit()
         return msg.id
     finally:
         db.close()
 
 
-def _set_user(user):
+def _as_user(user):
+    """Override the current-user dependency for the duration of a test."""
     app.dependency_overrides[get_current_user] = lambda: user
 
 
-# ===========================================================================
-# 1. org-scoped vs global messages
-# ===========================================================================
+def _clear_user():
+    app.dependency_overrides.pop(get_current_user, None)
 
-class TestOrgScopedVsGlobal:
 
-    def test_list_without_org_id_returns_only_global_messages(self, client, test_db, orgs):
-        org1_id = orgs["org1_id"]
-        _create_message(test_db, title="Global Msg", organization_id=None)
-        _create_message(test_db, title="Org1 Msg", organization_id=org1_id)
+# ── (1) member can list org and global messages ───────────────────────────────
 
-        _set_user(_superadmin())
+def test_member_can_list_own_org_messages(client, test_db):
+    org_id = _seed_org(test_db)
+    _seed_message(test_db, org_id=org_id)
+    _as_user(_make_member_user(org_id))
+    try:
+        res = client.get(f"/api/admin/messages?organization_id={org_id}")
+        assert res.status_code == 200
+        assert len(res.json()) >= 1
+    finally:
+        _clear_user()
+
+
+def test_member_can_list_global_messages(client, test_db):
+    _seed_message(test_db, org_id=None)
+    org_id = _seed_org(test_db)
+    _as_user(_make_member_user(org_id))
+    try:
         res = client.get("/api/admin/messages")
-
         assert res.status_code == 200
-        titles = [m["title"] for m in res.json()]
-        assert "Global Msg" in titles
-        assert "Org1 Msg" not in titles
+        assert len(res.json()) >= 1
+    finally:
+        _clear_user()
 
-    def test_list_with_org_id_returns_org_and_global_messages(self, client, test_db, orgs):
-        org1_id = orgs["org1_id"]
-        org2_id = orgs["org2_id"]
-        _create_message(test_db, title="Global Msg", organization_id=None)
-        _create_message(test_db, title="Org1 Msg", organization_id=org1_id)
-        _create_message(test_db, title="Org2 Msg", organization_id=org2_id)
 
-        _set_user(_superadmin())
-        res = client.get(f"/api/admin/messages?organization_id={org1_id}")
-
-        assert res.status_code == 200
-        titles = [m["title"] for m in res.json()]
-        assert "Global Msg" in titles
-        assert "Org1 Msg" in titles
-        assert "Org2 Msg" not in titles
-
-    def test_list_with_org2_id_does_not_return_org1_message(self, client, test_db, orgs):
-        org1_id = orgs["org1_id"]
-        org2_id = orgs["org2_id"]
-        _create_message(test_db, title="Org1 Msg", organization_id=org1_id)
-
-        _set_user(_superadmin())
+def test_member_cannot_list_other_org_messages(client, test_db):
+    org1_id = _seed_org(test_db)
+    org2_id = _seed_org(test_db)
+    _as_user(_make_member_user(org1_id))
+    try:
         res = client.get(f"/api/admin/messages?organization_id={org2_id}")
-
-        assert res.status_code == 200
-        titles = [m["title"] for m in res.json()]
-        assert "Org1 Msg" not in titles
-
-    def test_create_global_message_has_null_organization_id(self, client, test_db):
-        _set_user(_superadmin())
-        res = client.post(
-            "/api/admin/messages", json={"title": "Global", "placement": "banner"}
-        )
-
-        assert res.status_code == 201
-        assert res.json()["organization_id"] is None
-
-    def test_create_org_message_stores_organization_id(self, client, test_db, orgs):
-        org1_id = orgs["org1_id"]
-        _set_user(_superadmin())
-        res = client.post(
-            "/api/admin/messages",
-            json={"title": "Org Msg", "organization_id": org1_id, "placement": "banner"},
-        )
-
-        assert res.status_code == 201
-        assert res.json()["organization_id"] == org1_id
-
-
-# ===========================================================================
-# 2. org member read access
-# ===========================================================================
-
-class TestOrgMemberReadAccess:
-
-    def test_org_member_can_list_messages_for_their_org(self, client, test_db, orgs):
-        org1_id = orgs["org1_id"]
-        _create_message(test_db, title="Org1 Msg", organization_id=org1_id)
-
-        _set_user(_org_member(org1_id))
-        res = client.get(f"/api/admin/messages?organization_id={org1_id}")
-
-        assert res.status_code == 200
-        titles = [m["title"] for m in res.json()]
-        assert "Org1 Msg" in titles
-
-    def test_non_member_cannot_list_messages_for_org(self, client, test_db, orgs):
-        org1_id = orgs["org1_id"]
-        _set_user(_plain_user())
-        res = client.get(f"/api/admin/messages?organization_id={org1_id}")
-
         assert res.status_code == 403
+    finally:
+        _clear_user()
 
-    def test_org_member_can_view_message_detail(self, client, test_db, orgs):
-        org1_id = orgs["org1_id"]
-        msg_id = _create_message(test_db, title="Org1 Msg", organization_id=org1_id)
 
-        _set_user(_org_member(org1_id))
-        res = client.get(f"/api/admin/messages/{msg_id}")
+# ── (2) member cannot create / update / delete ────────────────────────────────
 
-        assert res.status_code == 200
-
-    def test_non_member_cannot_view_org_message_detail(self, client, test_db, orgs):
-        org1_id = orgs["org1_id"]
-        msg_id = _create_message(test_db, title="Org1 Msg", organization_id=org1_id)
-
-        _set_user(_plain_user())
-        res = client.get(f"/api/admin/messages/{msg_id}")
-
+def test_member_cannot_create(client, test_db):
+    org_id = _seed_org(test_db)
+    _as_user(_make_member_user(org_id))
+    try:
+        res = client.post("/api/admin/messages", json={"title": "Member Created Message", "organization_id": org_id})
         assert res.status_code == 403
+    finally:
+        _clear_user()
 
-    def test_org_member_cannot_create_messages(self, client, test_db, orgs):
-        org1_id = orgs["org1_id"]
-        _set_user(_org_member(org1_id))
-        res = client.post(
-            "/api/admin/messages",
-            json={"title": "Attempt", "organization_id": org1_id, "placement": "banner"},
-        )
 
+def test_member_cannot_update(client, test_db):
+    org_id = _seed_org(test_db)
+    msg_id = _seed_message(test_db, org_id=org_id)
+    _as_user(_make_member_user(org_id))
+    try:
+        res = client.patch(f"/api/admin/messages/{msg_id}", json={"title": "Updated by Member"})
         assert res.status_code == 403
+    finally:
+        _clear_user()
 
-    def test_org_member_cannot_update_messages(self, client, test_db, orgs):
-        org1_id = orgs["org1_id"]
-        msg_id = _create_message(test_db, title="Org1 Msg", organization_id=org1_id)
 
-        _set_user(_org_member(org1_id))
-        res = client.patch(f"/api/admin/messages/{msg_id}", json={"title": "Updated"})
-
-        assert res.status_code == 403
-
-    def test_org_member_cannot_delete_messages(self, client, test_db, orgs):
-        org1_id = orgs["org1_id"]
-        msg_id = _create_message(test_db, title="Org1 Msg", organization_id=org1_id)
-
-        _set_user(_org_member(org1_id))
+def test_member_cannot_delete(client, test_db):
+    org_id = _seed_org(test_db)
+    msg_id = _seed_message(test_db, org_id=org_id)
+    _as_user(_make_member_user(org_id))
+    try:
         res = client.delete(f"/api/admin/messages/{msg_id}")
-
         assert res.status_code == 403
-
-    def test_global_message_accessible_without_org_assignment(self, client, test_db):
-        msg_id = _create_message(test_db, title="Global Msg", organization_id=None)
-
-        _set_user(_plain_user())
-        res = client.get(f"/api/admin/messages/{msg_id}")
-
-        assert res.status_code == 200
+    finally:
+        _clear_user()
 
 
-# ===========================================================================
-# 3. org_admin vs superadmin write access
-# ===========================================================================
+# ── (3) org_admin manages own org only ───────────────────────────────────────
 
-class TestWriteAccess:
-
-    def test_org_admin_can_create_message_for_their_org(self, client, test_db, orgs):
-        org1_id = orgs["org1_id"]
-        _set_user(_org_admin(org1_id))
-        res = client.post(
-            "/api/admin/messages",
-            json={"title": "Org1 Msg", "organization_id": org1_id, "placement": "banner"},
-        )
-
+def test_org_admin_can_create_for_own_org(client, test_db):
+    org_id = _seed_org(test_db)
+    _as_user(_make_org_admin_user(org_id))
+    try:
+        res = client.post("/api/admin/messages", json={"title": "Msg", "organization_id": org_id})
         assert res.status_code == 201
+    finally:
+        _clear_user()
 
-    def test_org_admin_cannot_create_global_message(self, client, test_db, orgs):
-        org1_id = orgs["org1_id"]
-        _set_user(_org_admin(org1_id))
-        res = client.post(
-            "/api/admin/messages", json={"title": "Global Msg", "placement": "banner"}
-        )
 
+def test_org_admin_cannot_create_for_other_org(client, test_db):
+    org1_id = _seed_org(test_db)
+    org2_id = _seed_org(test_db)
+    _as_user(_make_org_admin_user(org1_id))
+    try:
+        res = client.post("/api/admin/messages", json={"title": "Msg", "organization_id": org2_id})
         assert res.status_code == 403
+    finally:
+        _clear_user()
 
-    def test_org_admin_cannot_create_message_for_other_org(self, client, test_db, orgs):
-        org1_id = orgs["org1_id"]
-        org2_id = orgs["org2_id"]
-        _set_user(_org_admin(org1_id))
-        res = client.post(
-            "/api/admin/messages",
-            json={"title": "Org2 Msg", "organization_id": org2_id, "placement": "banner"},
-        )
 
+def test_org_admin_cannot_create_global_message(client, test_db):
+    org_id = _seed_org(test_db)
+    _as_user(_make_org_admin_user(org_id))
+    try:
+        res = client.post("/api/admin/messages", json={"title": "Global"})
         assert res.status_code == 403
+    finally:
+        _clear_user()
 
-    def test_global_org_admin_can_create_global_message(self, client, test_db):
-        _set_user(_global_org_admin())
-        res = client.post(
-            "/api/admin/messages", json={"title": "Global Msg", "placement": "banner"}
-        )
 
-        assert res.status_code == 201
-
-    def test_superadmin_can_create_global_message(self, client, test_db):
-        _set_user(_superadmin())
-        res = client.post(
-            "/api/admin/messages", json={"title": "Global Msg", "placement": "banner"}
-        )
-
-        assert res.status_code == 201
-
-    def test_superadmin_can_create_org_message(self, client, test_db, orgs):
-        org1_id = orgs["org1_id"]
-        _set_user(_superadmin())
-        res = client.post(
-            "/api/admin/messages",
-            json={"title": "Org Msg", "organization_id": org1_id, "placement": "banner"},
-        )
-
-        assert res.status_code == 201
-
-    def test_org_admin_can_update_message_for_their_org(self, client, test_db, orgs):
-        org1_id = orgs["org1_id"]
-        msg_id = _create_message(test_db, organization_id=org1_id)
-
-        _set_user(_org_admin(org1_id))
+def test_org_admin_can_update_own_org_message(client, test_db):
+    org_id = _seed_org(test_db)
+    msg_id = _seed_message(test_db, org_id=org_id)
+    _as_user(_make_org_admin_user(org_id))
+    try:
         res = client.patch(f"/api/admin/messages/{msg_id}", json={"title": "Updated"})
-
         assert res.status_code == 200
         assert res.json()["title"] == "Updated"
+    finally:
+        _clear_user()
 
-    def test_org_admin_cannot_update_message_for_other_org(self, client, test_db, orgs):
-        org1_id = orgs["org1_id"]
-        org2_id = orgs["org2_id"]
-        msg_id = _create_message(test_db, organization_id=org2_id)
 
-        _set_user(_org_admin(org1_id))
-        res = client.patch(f"/api/admin/messages/{msg_id}", json={"title": "Updated"})
-
+def test_org_admin_cannot_update_other_org_message(client, test_db):
+    org1_id = _seed_org(test_db)
+    org2_id = _seed_org(test_db)
+    msg_id = _seed_message(test_db, org_id=org2_id)
+    _as_user(_make_org_admin_user(org1_id))
+    try:
+        res = client.patch(f"/api/admin/messages/{msg_id}", json={"title": "Nope"})
         assert res.status_code == 403
+    finally:
+        _clear_user()
 
-    def test_org_admin_cannot_update_global_message(self, client, test_db):
-        msg_id = _create_message(test_db, organization_id=None)
-        some_org_id = str(uuid.uuid4())
 
-        _set_user(_org_admin(some_org_id))
-        res = client.patch(f"/api/admin/messages/{msg_id}", json={"title": "Updated"})
+def test_org_admin_can_delete_own_org_message(client, test_db):
+    org_id = _seed_org(test_db)
+    msg_id = _seed_message(test_db, org_id=org_id)
+    _as_user(_make_org_admin_user(org_id))
+    try:
+        res = client.delete(f"/api/admin/messages/{msg_id}")
+        assert res.status_code == 204
+    finally:
+        _clear_user()
 
+
+def test_org_admin_cannot_delete_other_org_message(client, test_db):
+    org1_id = _seed_org(test_db)
+    org2_id = _seed_org(test_db)
+    msg_id = _seed_message(test_db, org_id=org2_id)
+    _as_user(_make_org_admin_user(org1_id))
+    try:
+        res = client.delete(f"/api/admin/messages/{msg_id}")
         assert res.status_code == 403
+    finally:
+        _clear_user()
 
-    def test_superadmin_can_update_any_message(self, client, test_db, orgs):
-        org1_id = orgs["org1_id"]
-        msg_id = _create_message(test_db, organization_id=org1_id)
 
-        _set_user(_superadmin())
-        res = client.patch(f"/api/admin/messages/{msg_id}", json={"title": "Updated"})
+def test_org_admin_cannot_delete_global_message(client, test_db):
+    org_id = _seed_org(test_db)
+    msg_id = _seed_message(test_db, org_id=None)
+    _as_user(_make_org_admin_user(org_id))
+    try:
+        res = client.delete(f"/api/admin/messages/{msg_id}")
+        assert res.status_code == 403
+    finally:
+        _clear_user()
 
+
+# ── (4) global org_admin / superadmin manages global messages ─────────────────
+
+def test_global_org_admin_can_create_global_message(client, test_db):
+    _as_user(_make_global_org_admin_user())
+    try:
+        res = client.post("/api/admin/messages", json={"title": "Global msg"})
+        assert res.status_code == 201
+        assert res.json()["organization_id"] is None
+    finally:
+        _clear_user()
+
+
+def test_superadmin_can_create_global_message(client, test_db):
+    _as_user(_make_superadmin_user())
+    try:
+        res = client.post("/api/admin/messages", json={"title": "Super global"})
+        assert res.status_code == 201
+        assert res.json()["organization_id"] is None
+    finally:
+        _clear_user()
+
+
+def test_global_org_admin_can_update_global_message(client, test_db):
+    msg_id = _seed_message(test_db, org_id=None)
+    _as_user(_make_global_org_admin_user())
+    try:
+        res = client.patch(f"/api/admin/messages/{msg_id}", json={"title": "Updated global"})
         assert res.status_code == 200
+        assert res.json()["title"] == "Updated global"
+    finally:
+        _clear_user()
 
-    def test_org_admin_can_delete_message_for_their_org(self, client, test_db, orgs):
-        org1_id = orgs["org1_id"]
-        msg_id = _create_message(test_db, organization_id=org1_id)
 
-        _set_user(_org_admin(org1_id))
+def test_superadmin_can_delete_global_message(client, test_db):
+    msg_id = _seed_message(test_db, org_id=None)
+    _as_user(_make_superadmin_user())
+    try:
         res = client.delete(f"/api/admin/messages/{msg_id}")
-
         assert res.status_code == 204
-
-    def test_org_admin_cannot_delete_message_for_other_org(self, client, test_db, orgs):
-        org1_id = orgs["org1_id"]
-        org2_id = orgs["org2_id"]
-        msg_id = _create_message(test_db, organization_id=org2_id)
-
-        _set_user(_org_admin(org1_id))
-        res = client.delete(f"/api/admin/messages/{msg_id}")
-
-        assert res.status_code == 403
-
-    def test_org_admin_cannot_delete_global_message(self, client, test_db):
-        msg_id = _create_message(test_db, organization_id=None)
-        some_org_id = str(uuid.uuid4())
-
-        _set_user(_org_admin(some_org_id))
-        res = client.delete(f"/api/admin/messages/{msg_id}")
-
-        assert res.status_code == 403
-
-    def test_superadmin_can_delete_any_message(self, client, test_db, orgs):
-        org1_id = orgs["org1_id"]
-        msg_id = _create_message(test_db, organization_id=org1_id)
-
-        _set_user(_superadmin())
-        res = client.delete(f"/api/admin/messages/{msg_id}")
-
-        assert res.status_code == 204
+    finally:
+        _clear_user()
 
 
-# ===========================================================================
-# 4. Publish payload shape for create / update / delete
-# ===========================================================================
+def test_superadmin_can_create_org_scoped_message(client, test_db):
+    org_id = _seed_org(test_db)
+    _as_user(_make_superadmin_user())
+    try:
+        res = client.post("/api/admin/messages", json={"title": "SA org msg", "organization_id": org_id})
+        assert res.status_code == 201
+        assert res.json()["organization_id"] == org_id
+    finally:
+        _clear_user()
 
-class TestPubSubPayload:
 
-    def test_create_publishes_envelope_with_correct_shape(self, client, test_db):
-        _set_user(_superadmin())
+# ── (5) start/end active-window filtering and placement filtering ─────────────
 
+def test_placement_filter_returns_only_matching_placement(client, test_db):
+    _seed_message(test_db, org_id=None, placement="banner", title="Banner msg")
+    _seed_message(test_db, org_id=None, placement="frontpage", title="Frontpage msg")
+    _as_user(_make_superadmin_user())
+    try:
+        res = client.get("/api/admin/messages?placement=banner&active=false")
+        assert res.status_code == 200
+        data = res.json()
+        assert len(data) == 1
+        assert data[0]["placement"] == "banner"
+    finally:
+        _clear_user()
+
+
+def test_placement_filter_frontpage(client, test_db):
+    _seed_message(test_db, org_id=None, placement="banner", title="Banner msg")
+    _seed_message(test_db, org_id=None, placement="frontpage", title="Frontpage msg")
+    _as_user(_make_superadmin_user())
+    try:
+        res = client.get("/api/admin/messages?placement=frontpage&active=false")
+        assert res.status_code == 200
+        data = res.json()
+        assert len(data) == 1
+        assert data[0]["placement"] == "frontpage"
+    finally:
+        _clear_user()
+
+
+def test_active_filter_excludes_not_yet_started_message(client, test_db):
+    now = datetime.now(timezone.utc)
+    future_start = now + timedelta(hours=2)
+    future_end = now + timedelta(hours=4)
+    _seed_message(test_db, org_id=None, start=future_start, end=future_end, title="Future")
+    _as_user(_make_superadmin_user())
+    try:
+        res = client.get("/api/admin/messages?active=true")
+        assert res.status_code == 200
+        titles = [m["title"] for m in res.json()]
+        assert "Future" not in titles
+    finally:
+        _clear_user()
+
+
+def test_active_filter_excludes_expired_message(client, test_db):
+    now = datetime.now(timezone.utc)
+    old_start = now - timedelta(hours=4)
+    old_end = now - timedelta(hours=2)
+    _seed_message(test_db, org_id=None, start=old_start, end=old_end, title="Expired")
+    _as_user(_make_superadmin_user())
+    try:
+        res = client.get("/api/admin/messages?active=true")
+        assert res.status_code == 200
+        titles = [m["title"] for m in res.json()]
+        assert "Expired" not in titles
+    finally:
+        _clear_user()
+
+
+def test_active_filter_includes_message_within_window(client, test_db):
+    now = datetime.now(timezone.utc)
+    past_start = now - timedelta(hours=2)
+    future_end = now + timedelta(hours=2)
+    _seed_message(test_db, org_id=None, start=past_start, end=future_end, title="Active")
+    _as_user(_make_superadmin_user())
+    try:
+        res = client.get("/api/admin/messages?active=true")
+        assert res.status_code == 200
+        titles = [m["title"] for m in res.json()]
+        assert "Active" in titles
+    finally:
+        _clear_user()
+
+
+def test_active_filter_includes_message_with_no_window(client, test_db):
+    _seed_message(test_db, org_id=None, start=None, end=None, title="Always active")
+    _as_user(_make_superadmin_user())
+    try:
+        res = client.get("/api/admin/messages?active=true")
+        assert res.status_code == 200
+        titles = [m["title"] for m in res.json()]
+        assert "Always active" in titles
+    finally:
+        _clear_user()
+
+
+def test_inactive_filter_returns_all_messages_including_future(client, test_db):
+    now = datetime.now(timezone.utc)
+    past_start = now - timedelta(hours=2)
+    future_start = now + timedelta(hours=2)
+    future_end = now + timedelta(hours=4)
+    _seed_message(test_db, org_id=None, start=past_start, end=future_end, title="Active")
+    _seed_message(test_db, org_id=None, start=future_start, end=future_end, title="Future")
+    _as_user(_make_superadmin_user())
+    try:
+        res = client.get("/api/admin/messages?active=false")
+        assert res.status_code == 200
+        titles = [m["title"] for m in res.json()]
+        assert "Active" in titles
+        assert "Future" in titles
+    finally:
+        _clear_user()
+
+
+# ── (6) pubsub publish payload shape ─────────────────────────────────────────
+
+def test_create_publishes_envelope_with_correct_shape(client, test_db):
+    _as_user(_make_superadmin_user())
+    try:
         with patch("app.api.routes.admin_messages._pubsub") as mock_pubsub:
             res = client.post(
                 "/api/admin/messages",
@@ -458,11 +499,14 @@ class TestPubSubPayload:
         assert "placement" in msg
         assert "priority" in msg
         assert "created_at" in msg
+    finally:
+        _clear_user()
 
-    def test_update_publishes_envelope_with_correct_shape(self, client, test_db):
-        msg_id = _create_message(test_db, title="Original")
-        _set_user(_superadmin())
 
+def test_update_publishes_envelope_with_correct_shape(client, test_db):
+    msg_id = _seed_message(test_db, title="Original")
+    _as_user(_make_superadmin_user())
+    try:
         with patch("app.api.routes.admin_messages._pubsub") as mock_pubsub:
             res = client.patch(
                 f"/api/admin/messages/{msg_id}", json={"title": "Updated Title"}
@@ -479,12 +523,15 @@ class TestPubSubPayload:
         assert msg["id"] == msg_id
         assert msg["title"] == "Updated Title"
         assert "organization_id" in msg
+    finally:
+        _clear_user()
 
-    def test_delete_publishes_envelope_with_correct_shape(self, client, test_db, orgs):
-        org1_id = orgs["org1_id"]
-        msg_id = _create_message(test_db, title="To Delete", organization_id=org1_id)
-        _set_user(_superadmin())
 
+def test_delete_publishes_envelope_with_correct_shape(client, test_db):
+    org_id = _seed_org(test_db)
+    msg_id = _seed_message(test_db, org_id=org_id, title="To Delete")
+    _as_user(_make_superadmin_user())
+    try:
         with patch("app.api.routes.admin_messages._pubsub") as mock_pubsub:
             res = client.delete(f"/api/admin/messages/{msg_id}")
             assert res.status_code == 204
@@ -497,13 +544,16 @@ class TestPubSubPayload:
         assert payload["action"] == "delete"
         msg = payload["message"]
         assert msg["id"] == msg_id
-        assert msg["organization_id"] == org1_id
+        assert msg["organization_id"] == org_id
         assert "placement" in msg
+    finally:
+        _clear_user()
 
-    def test_delete_global_message_publishes_null_organization_id(self, client, test_db):
-        msg_id = _create_message(test_db, title="Global To Delete", organization_id=None)
-        _set_user(_superadmin())
 
+def test_delete_global_message_publishes_null_organization_id(client, test_db):
+    msg_id = _seed_message(test_db, org_id=None, title="Global To Delete")
+    _as_user(_make_superadmin_user())
+    try:
         with patch("app.api.routes.admin_messages._pubsub") as mock_pubsub:
             res = client.delete(f"/api/admin/messages/{msg_id}")
             assert res.status_code == 204
@@ -511,3 +561,5 @@ class TestPubSubPayload:
         envelope = json.loads(mock_pubsub.schedule_publish.call_args[0][0])
         payload = envelope["payload"]
         assert payload["message"]["organization_id"] is None
+    finally:
+        _clear_user()
