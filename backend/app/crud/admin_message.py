@@ -38,18 +38,18 @@ def list_admin_messages_for_org(db: Session, organization_id: str | None = None,
     q = db.query(AdminMessage)
     if organization_id is None:
         # only global messages
-        q = q.filter(AdminMessage.organization_id == None)
+        q = q.filter(AdminMessage.organization_id.is_(None))
     else:
         # include org-specific and global messages
-        q = q.filter(or_(AdminMessage.organization_id == organization_id, AdminMessage.organization_id == None))
+        q = q.filter(or_(AdminMessage.organization_id == organization_id, AdminMessage.organization_id.is_(None)))
 
     if placement is not None:
         q = q.filter(AdminMessage.placement == placement)
 
     if active_only:
         q = q.filter(and_(
-            or_(AdminMessage.start == None, AdminMessage.start <= now),
-            or_(AdminMessage.end == None, AdminMessage.end >= now),
+            or_(AdminMessage.start.is_(None), AdminMessage.start <= now),
+            or_(AdminMessage.end.is_(None), AdminMessage.end >= now),
         ))
 
     return q.order_by(AdminMessage.priority.desc(), AdminMessage.start.asc()).all()
