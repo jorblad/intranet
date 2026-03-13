@@ -9,10 +9,10 @@ export default boot(async ({ app }) => {
   // Try server-provided default language for unauthenticated pages (login)
   let serverDefault = null
   try {
-    const res = await axios.get('/api/public/settings')
+    const res = await axios.get('/api/public/settings', { timeout: 2000 })
     serverDefault = res?.data?.data?.default_user_language || res?.data?.data?.invite_default_language || null
   } catch (e) {
-    // ignore network / 404 errors
+    // ignore network / 404 errors (including timeouts)
   }
 
   // choose initial locale from localStorage, server default, or navigator
