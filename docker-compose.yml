@@ -22,15 +22,14 @@ services:
     image: ghcr.io/jorblad/intranet-backend:latest
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000
     volumes:
-      - ./backend:/app
       - ./intranet-frontend/dist/spa:/frontend:ro
     environment:
       - STATIC_DIR=/frontend
       - DATABASE_URL=postgresql+psycopg2://intranet:intranet_password@db:5432/intranet_db
       # Admin credentials used by the DB init script. Override via environment
-      # or a .env file in production. Defaults are provided for local dev.
+      # or a .env file.
       - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
-      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-password}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-change-me}
     ports:
       - "8000:8000"
       - "8200:8000"

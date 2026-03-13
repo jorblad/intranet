@@ -14,7 +14,7 @@ def _ensure_list_ids(val):
     # If a single string id is provided, wrap it in a list to avoid
     # iterating over its characters.
     if isinstance(val, str):
-        return [val] if val else []
+        return [val]
     out = []
     try:
         for a in val:
@@ -25,9 +25,9 @@ def _ensure_list_ids(val):
             else:
                 out.append(str(a))
     except Exception:
-        # Fallback: try to coerce the whole thing to string
+        # Fallback: try to coerce the whole thing to a single string id
         try:
-            return [str(v) for v in list(val)]
+            return [str(val)]
         except Exception:
             return []
     return out
@@ -156,6 +156,7 @@ def _update_entry_in_session(
     responsible_ids: list[str] | None,
     devotional_ids: list[str] | None,
     cant_come_ids: list[str] | None,
+    commit: bool = True,
 ) -> ScheduleEntry:
     if date is not None:
         entry.date = date
@@ -189,8 +190,10 @@ def _update_entry_in_session(
         entry.responsible_users = _resolve_users(db, r_ids)
         entry.devotional_users = _resolve_users(db, d_ids)
         entry.cant_come_users = _resolve_users(db, c_ids)
+    if commit:
+        db.commit()
+        db.refresh(entry)
     return entry
-
 
 def update_entry(
     db: Session,
@@ -206,7 +209,7 @@ def update_entry(
     devotional_ids: list[str] | None,
     cant_come_ids: list[str] | None,
 ) -> ScheduleEntry:
-    entry = _update_entry_in_session(
+    return _update_entry_in_session(
         db,
         entry,
         date,
@@ -220,9 +223,6 @@ def update_entry(
         devotional_ids,
         cant_come_ids,
     )
-    db.commit()
-    db.refresh(entry)
-    return entry
 
 
 def delete_entry(db: Session, entry: ScheduleEntry) -> None:
@@ -264,6 +264,7 @@ def bulk_update_entries(db: Session, schedule_id: str, updates: list[dict]) -> l
                 u.get('responsible_ids', None),
                 u.get('devotional_ids', None),
                 u.get('cant_come_ids', None),
+                commit=False,
             )
             updated.append(entry)
         db.commit()

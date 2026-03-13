@@ -136,7 +136,11 @@ export default {
           this.$i18n.locale = final
         }
       } catch (e) {}
-      try { localStorage.setItem('locale', final) } catch (e) {}
+      try {
+        if (typeof window !== 'undefined' && typeof window.localStorage !== 'undefined') {
+          window.localStorage.setItem('locale', final)
+        }
+      } catch (e) {}
       this.selectedLocale = final
     },
     async login() {
@@ -152,8 +156,12 @@ export default {
         })
         const access_token = response.data.access_token
         const refresh_token = response.data.refresh_token
-        localStorage.setItem('access_token', access_token)
-        localStorage.setItem('refresh_token', refresh_token)
+        try {
+          if (typeof window !== 'undefined' && typeof window.localStorage !== 'undefined') {
+            window.localStorage.setItem('access_token', access_token)
+            window.localStorage.setItem('refresh_token', refresh_token)
+          }
+        } catch (e) {}
         this.errorMessage = ''
       } catch (error) {
         console.error('Login request failed:', error)
@@ -168,11 +176,20 @@ export default {
       }
     },
     isAuthenticated() {
-      return localStorage.getItem('access_token') !== null
+      try {
+        if (typeof window !== 'undefined' && typeof window.localStorage !== 'undefined') {
+          return window.localStorage.getItem('access_token') !== null
+        }
+      } catch (e) {}
+      return false
     },
     logout() {
-      localStorage.removeItem('access_token')
-      localStorage.removeItem('refresh_token')
+      try {
+        if (typeof window !== 'undefined' && typeof window.localStorage !== 'undefined') {
+          window.localStorage.removeItem('access_token')
+          window.localStorage.removeItem('refresh_token')
+        }
+      } catch (e) {}
       this.$router.push('/login').catch(() => {})
     },
     async sendResetRequest() {

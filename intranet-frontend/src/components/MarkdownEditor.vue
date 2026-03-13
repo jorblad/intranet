@@ -106,6 +106,26 @@ function insertLink() {
   } catch (e) {}
 }
 
+const SAFE_URL_PATTERN = /^(https?:|mailto:)/i
+
+function sanitizeUrl (url) {
+  try {
+    if (!url) return '#'
+    const trimmed = String(url).trim()
+    // Allow same-page anchors and relative paths
+    if (trimmed.startsWith('#') || trimmed.startsWith('/')) {
+      return trimmed.replace(/"/g, '&quot;').replace(/'/g, '&#39;')
+    }
+    if (SAFE_URL_PATTERN.test(trimmed)) {
+      return trimmed.replace(/"/g, '&quot;').replace(/'/g, '&#39;')
+    }
+    // Block all other schemes (e.g. javascript:, data:, vbscript:)
+    return '#'
+  } catch (e) {
+    return '#'
+  }
+}
+
 async function renderToHtml(md) {
   if (!md) return ''
   try {
@@ -130,7 +150,10 @@ async function renderToHtml(md) {
     s = s.replace(/`([^`]+)`/g, '<code>$1</code>')
     s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
     s = s.replace(/\*(?!\*)(.+?)\*/g, '<em>$1</em>')
-    s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
+    s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (m, text, href) => {
+      const safeHref = sanitizeUrl(href)
+      return `<a href="${safeHref}" target="_blank" rel="noopener noreferrer">${text}</a>`
+    })
     s = s.replace(/(^|\n)[ \t]*([-*])[ \t]+(.+)(?=\n|$)/g, (m, pre, _dash, content) => `${pre}<li>${content}</li>`)
     s = s.replace(/(?:<li>.*?<\/li>\s*)+/gs, m => `<ul>${m.replace(/\s+/g,'')}</ul>`)
     const parts = s.split(/\n{2,}/).map(p => `<p>${p.replace(/\n/g, '<br/>')}</p>`)

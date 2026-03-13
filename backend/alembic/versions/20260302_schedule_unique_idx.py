@@ -20,15 +20,15 @@ def upgrade():
     # Normalize NULL organization_id by coalescing to empty string for grouping
     delete_sql = """
     WITH keep AS (
-      SELECT min(id) AS keep_id, name, term_id, coalesce(activity_id::text, '') AS activity_id, coalesce(organization_id::text, '') AS organization_id
+      SELECT min(id) AS keep_id, name, term_id, coalesce(CAST(activity_id AS text), '') AS activity_id, coalesce(CAST(organization_id AS text), '') AS organization_id
       FROM schedules
-      GROUP BY name, term_id, coalesce(activity_id::text, ''), coalesce(organization_id::text, '')
+      GROUP BY name, term_id, coalesce(CAST(activity_id AS text), ''), coalesce(CAST(organization_id AS text), '')
       HAVING count(*) > 1
     )
     DELETE FROM schedules s
     USING keep k
-    WHERE coalesce(s.activity_id::text, '') = k.activity_id
-      AND coalesce(s.organization_id::text, '') = k.organization_id
+    WHERE coalesce(CAST(s.activity_id AS text), '') = k.activity_id
+      AND coalesce(CAST(s.organization_id AS text), '') = k.organization_id
       AND s.name = k.name
       AND s.term_id = k.term_id
       AND s.id <> k.keep_id;
