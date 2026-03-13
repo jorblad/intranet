@@ -365,7 +365,7 @@ async function saveProfile() {
     await fetchCurrentUser()
     // refresh local form values from the updated auth state
     populateFromAuth()
-      populateSelectedActivitiesFromAuth()
+    populateSelectedActivitiesFromAuth()
     updatePersonalUrl()
     // ensure native inputs have autocomplete set after re-render
     ensurePasswordAutocomplete()
