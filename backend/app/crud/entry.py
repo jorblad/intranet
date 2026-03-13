@@ -189,6 +189,7 @@ def _update_entry_in_session(
     if commit:
         db.commit()
         db.refresh(entry)
+    return entry
 
 def update_entry(
     db: Session,
@@ -204,7 +205,7 @@ def update_entry(
     devotional_ids: list[str] | None,
     cant_come_ids: list[str] | None,
 ) -> ScheduleEntry:
-    entry = _update_entry_in_session(
+    return _update_entry_in_session(
         db,
         entry,
         date,
@@ -218,9 +219,6 @@ def update_entry(
         devotional_ids,
         cant_come_ids,
     )
-    db.commit()
-    db.refresh(entry)
-    return entry
 
 
 def delete_entry(db: Session, entry: ScheduleEntry) -> None:
@@ -267,6 +265,7 @@ def bulk_update_entries(db: Session, schedule_id: str, updates: list[dict]) -> l
                 u.get('responsible_ids', None),
                 u.get('devotional_ids', None),
                 u.get('cant_come_ids', None),
+                commit=False,
             )
             updated.append(entry)
         db.commit()
