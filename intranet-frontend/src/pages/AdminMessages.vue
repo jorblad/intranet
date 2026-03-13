@@ -62,25 +62,19 @@ import { defineComponent, ref, computed, onMounted, onBeforeUnmount, watch } fro
 import { useI18n } from 'vue-i18n'
 import { useQuasar } from 'quasar'
 import { useAuth, fetchOrganizations } from 'src/services/auth'
-import { fetchAdminMessages, createAdminMessage, updateAdminMessage, deleteAdminMessage } from 'src/services/adminMessages'
+import { fetchAdminMessages, deleteAdminMessage } from 'src/services/adminMessages'
 import orbitSchedules from 'src/services/orbitSchedules.js'
-import DateTimePicker from 'src/components/DateTimePicker.vue'
-// Use a local QIconPicker component as a lightweight fallback.
-import QIconPicker from 'src/components/QIconPicker.vue'
 import AdminMessageDialog from 'src/components/AdminMessageDialog.vue'
 
 export default defineComponent({
   name: 'AdminMessages',
-  components: { DateTimePicker, QIconPicker, AdminMessageDialog },
+  components: { AdminMessageDialog },
   setup () {
     const auth = useAuth()
     fetchOrganizations()
 
 
     const messages = ref([])
-    const showCreate = ref(false)
-    const editing = ref(false)
-    const form = ref({ title: '', body: '', start: null, end: null, priority: 0, organization_id: null, id: null, icon: null, placement: 'banner' })
     const dialogShow = ref(false)
     const dialogInitial = ref(null)
 
