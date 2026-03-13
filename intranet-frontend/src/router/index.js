@@ -65,7 +65,14 @@ export default route(function (/* { store, ssrContext } */) {
     const requiresAuth = !!to.meta.requiresAuth
 
     if (requiresAuth) {
-      const token = localStorage.getItem('access_token')
+      let token = null
+      if (typeof window !== 'undefined' && typeof window.localStorage !== 'undefined') {
+        try {
+          token = window.localStorage.getItem('access_token')
+        } catch (e) {
+          token = null
+        }
+      }
       if (!token) {
         next('/login')
         return
@@ -82,7 +89,12 @@ export default route(function (/* { store, ssrContext } */) {
           return
         }
       } catch (err) {
-        try { localStorage.removeItem('access_token'); localStorage.removeItem('refresh_token') } catch (e) {}
+        try {
+          if (typeof window !== 'undefined' && typeof window.localStorage !== 'undefined') {
+            window.localStorage.removeItem('access_token')
+            window.localStorage.removeItem('refresh_token')
+          }
+        } catch (e) {}
         next('/login')
         return
       }
@@ -113,5 +125,12 @@ export default route(function (/* { store, ssrContext } */) {
 function isAuthenticated() {
   // Implement your authentication logic here
   // For example, check if a token is stored in localStorage
-  return localStorage.getItem('access_token') !== null;
+  if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') {
+    return false;
+  }
+  try {
+    return window.localStorage.getItem('access_token') !== null;
+  } catch (e) {
+    return false;
+  }
 }
