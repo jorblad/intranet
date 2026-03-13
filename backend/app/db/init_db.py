@@ -88,7 +88,7 @@ def init_db() -> None:
             # Create only the admin user. Username/password can be provided
             # via environment variables `ADMIN_USERNAME` and `ADMIN_PASSWORD`.
             admin_username = os.getenv("ADMIN_USERNAME", "admin")
-            admin_password = os.getenv("ADMIN_PASSWORD", "password")
+            admin_password = os.getenv("ADMIN_PASSWORD") or "password"
             admin = User(
                 id=str(uuid.uuid4()),
                 username=admin_username,
