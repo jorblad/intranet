@@ -34,12 +34,10 @@ import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import axios from 'axios'
 import { useQuasar } from 'quasar'
-import { useI18n } from 'vue-i18n'
 
 const route = useRoute()
 const router = useRouter()
 const $q = useQuasar()
-const { t } = useI18n()
 
 const token = ref('')
 const password = ref('')
