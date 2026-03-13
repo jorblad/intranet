@@ -130,7 +130,7 @@ class PubSub:
                 # module import / test collection), create a dedicated loop running
                 # in a background thread and schedule the subscribe coroutine there.
                 try:
-                    cur_loop = asyncio.get_event_loop()
+                    cur_loop = asyncio.get_running_loop()
                     self._loop = cur_loop
                     # schedule task on the current loop
                     self._valkey_task = cur_loop.create_task(self._valkey_subscribe_loop())
