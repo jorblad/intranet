@@ -62,7 +62,7 @@ def issue_token(
             .first()
         )
         if not token_row:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Refresh token expired")
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token")
 
         # Normalize stored expires_at to timezone-aware UTC before comparing.
         expires_at = getattr(token_row, 'expires_at', None)
