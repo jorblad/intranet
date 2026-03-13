@@ -167,19 +167,27 @@ watch(selectedActivities, () => {
 function updatePersonalUrl() {
   const u = auth.user
   const token = u?.attributes?.calendar_token
-  if (token) {
-    let url = `${window.location.origin}/api/calendars/personal/${token}.ics`
-    // append selected activities as repeatable query params
-    try {
-      if (Array.isArray(selectedActivities.value) && selectedActivities.value.length > 0) {
-        const params = selectedActivities.value.map(a => `activity_id=${encodeURIComponent(String(a))}`).join('&')
-        url = `${url}?${params}`
-      }
-    } catch (e) {}
-    personalCalendarUrl.value = url
-  } else {
+
+  if (!token) {
     personalCalendarUrl.value = ''
+    return
   }
+
+  // Guard against non-browser / SSR contexts where `window` is not available.
+  if (typeof window === 'undefined' || !window.location || !window.location.origin) {
+    personalCalendarUrl.value = ''
+    return
+  }
+
+  let url = `${window.location.origin}/api/calendars/personal/${token}.ics`
+  // append selected activities as repeatable query params
+  try {
+    if (Array.isArray(selectedActivities.value) && selectedActivities.value.length > 0) {
+      const params = selectedActivities.value.map(a => `activity_id=${encodeURIComponent(String(a))}`).join('&')
+      url = `${url}?${params}`
+    }
+  } catch (e) {}
+  personalCalendarUrl.value = url
 }
 
 async function fetchActivities() {
