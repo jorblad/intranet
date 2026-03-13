@@ -169,6 +169,7 @@ export default defineComponent({
         }
       } catch (e) {}
     }
+    let refreshTimer = null
     const tryAttach = () => {
       try {
         ws = orbitSchedules && orbitSchedules.ws
@@ -176,6 +177,7 @@ export default defineComponent({
           ws.addEventListener('message', onWsMessage)
           attached = true
           if (poll) { clearInterval(poll); poll = null }
+          if (refreshTimer) { clearInterval(refreshTimer); refreshTimer = null }
         }
       } catch (e) {}
     }
@@ -184,12 +186,13 @@ export default defineComponent({
     if (!attached) poll = setInterval(tryAttach, 500)
 
     // Periodic fallback refresh for environments without cross-process pubsub
-    let refreshTimer = null
     const REFRESH_MS = 5000
     try {
-      refreshTimer = setInterval(() => {
-        try { load().catch(() => {}) } catch (e) {}
-      }, REFRESH_MS)
+      if (!attached) {
+        refreshTimer = setInterval(() => {
+          try { load().catch(() => {}) } catch (e) {}
+        }, REFRESH_MS)
+      }
     } catch (e) {}
 
     // listen for in-tab broadcasts (CustomEvent) and cross-tab broadcasts (storage)
