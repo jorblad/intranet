@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, Response, Query
 from typing import List, Optional
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.api.routes.auth import get_current_user
 from app.db.session import get_db
@@ -107,7 +107,16 @@ def personal_calendar(
     activity_id: Optional[List[str]] = Query(None, description="Filter by activity id (repeatable)"),
 ):
     # include entries where user is responsible or devotional, but exclude if user can't come
-    entries = db.query(ScheduleEntry).all()
+    entries = (
+        db.query(ScheduleEntry)
+        .options(
+            selectinload(ScheduleEntry.responsible_users),
+            selectinload(ScheduleEntry.devotional_users),
+            selectinload(ScheduleEntry.cant_come_users),
+            selectinload(ScheduleEntry.schedule),
+        )
+        .all()
+    )
     cal_lines = [
         "BEGIN:VCALENDAR",
         "VERSION:2.0",
