@@ -40,7 +40,10 @@ def admin_messages_index(organization_id: str | None = None, active: bool = True
         # allow viewing org messages for assigned users or admins
         try:
             require_org_admin_or_superadmin(_user, organization_id)
-        except Exception:
+        except HTTPException as exc:
+            # only treat expected 403 authorization failures as a signal to fall back
+            if exc.status_code != status.HTTP_403_FORBIDDEN:
+                raise
             # non-admin users may still view messages for orgs they belong to
             from app.core.rbac import user_assigned_to_org
 
