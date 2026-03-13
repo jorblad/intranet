@@ -89,7 +89,7 @@ export default defineConfig((ctx) => {
 
       vitePlugins: [
         ['@intlify/unplugin-vue-i18n/vite', {
-          include: [ fileURLToPath(new URL('./src/i18n', import.meta.url)) ],
+          include: [ path.resolve(__dirname, './src/i18n/**') ],
           ssr: ctx.modeName === 'ssr'
         }]
       ]
