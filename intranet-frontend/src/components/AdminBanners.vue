@@ -19,7 +19,7 @@
             <q-tooltip anchor="bottom middle">{{ getOrgLabel(m.organization_id) }}</q-tooltip>
           </q-chip>
         </div>
-        <div v-if="m.body" class="banner-body md-render" v-html="renderedHtml[m.id] || ''"></div>
+        <div v-if="m.body" class="banner-body md-render" v-html="renderBannerBody(m.body)"></div>
       </div>
     </q-banner>
   </div>
@@ -34,11 +34,22 @@ import { fetchAdminMessages } from 'src/services/adminMessages'
 import orbitSchedules from 'src/services/orbitSchedules.js'
 import ensureFontAwesomeLoaded from 'src/plugins/fa-loader'
 import { renderToHtml } from 'src/utils/markdown'
+import DOMPurify from 'dompurify'
 
 export default defineComponent({
   name: 'AdminBanners',
   props: {
     organizationId: { type: [String, null], default: null },
+  },
+  methods: {
+    renderBannerBody (body) {
+      if (!body) {
+        return ''
+      }
+      // Render markdown to HTML and sanitize before injecting into the DOM.
+      const rawHtml = renderToHtml(body)
+      return DOMPurify.sanitize(rawHtml)
+    },
   },
   setup (props) {
     const messages = ref([])
