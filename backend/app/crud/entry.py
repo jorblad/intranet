@@ -139,7 +139,7 @@ def bulk_create_entries(db: Session, schedule_id: str, entries_data: list[dict])
         raise
 
 
-def update_entry(
+def _update_entry_in_session(
     db: Session,
     entry: ScheduleEntry,
     date,
@@ -185,6 +185,37 @@ def update_entry(
         entry.responsible_users = _resolve_users(db, r_ids)
         entry.devotional_users = _resolve_users(db, d_ids)
         entry.cant_come_users = _resolve_users(db, c_ids)
+    return entry
+
+
+def update_entry(
+    db: Session,
+    entry: ScheduleEntry,
+    date,
+    start,
+    end,
+    name: str | None,
+    description: str | None,
+    notes: str | None,
+    public_event: bool | None,
+    responsible_ids: list[str] | None,
+    devotional_ids: list[str] | None,
+    cant_come_ids: list[str] | None,
+) -> ScheduleEntry:
+    entry = _update_entry_in_session(
+        db,
+        entry,
+        date,
+        start,
+        end,
+        name,
+        description,
+        notes,
+        public_event,
+        responsible_ids,
+        devotional_ids,
+        cant_come_ids,
+    )
     db.commit()
     db.refresh(entry)
     return entry
@@ -216,7 +247,7 @@ def bulk_update_entries(db: Session, schedule_id: str, updates: list[dict]) -> l
             if not entry:
                 skipped.append({'id': eid, 'reason': 'not found or wrong schedule'})
                 continue
-            entry = update_entry(
+            entry = _update_entry_in_session(
                 db,
                 entry,
                 u.get('date', None),
@@ -231,6 +262,10 @@ def bulk_update_entries(db: Session, schedule_id: str, updates: list[dict]) -> l
                 u.get('cant_come_ids', None),
             )
             updated.append(entry)
+        db.commit()
+        # refresh updated entries before returning
+        for entry in updated:
+            db.refresh(entry)
         try:
             if skipped:
                 print(f"bulk_update_entries: skipped {len(skipped)} items: {skipped}")
