@@ -24,9 +24,9 @@ jobs:
       VALKEY_HOST: valkey
       VALKEY_PORT: '6379'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v6
         with:
           python-version: '3.14'
       - name: Install system build packages
@@ -49,11 +49,11 @@ jobs:
     runs-on: ubuntu-latest
     needs: backend-tests
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
-          node-version: '20'
+          node-version: '24'
           cache: 'npm'
           cache-dependency-path: intranet-frontend/package-lock.json
       - name: Install frontend dependencies
