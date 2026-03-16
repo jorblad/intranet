@@ -51,9 +51,15 @@ if static_dir.exists() and (static_dir / "index.html").is_file():
     def serve_spa(full_path: str):
         if full_path.startswith(("api", "oauth", "ws")):
             raise HTTPException(status_code=404, detail="Not Found")
-        file_path = static_dir / full_path
-        if file_path.is_file():
-            return FileResponse(file_path)
+        # Normalize the requested path and ensure it stays within static_dir
+        try:
+            candidate_path = (static_dir / full_path.lstrip("/")).resolve()
+            # This will raise ValueError if candidate_path is not within static_dir
+            candidate_path.relative_to(static_dir)
+        except ValueError:
+            return FileResponse(index_file)
+        if candidate_path.is_file():
+            return FileResponse(candidate_path)
         return FileResponse(index_file)
 else:
     @app.get("/")
