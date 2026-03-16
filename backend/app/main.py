@@ -54,26 +54,30 @@ if static_dir.exists() and (static_dir / "index.html").is_file():
     def serve_spa(full_path: str):
         if full_path.startswith(("api", "oauth", "ws")):
             raise HTTPException(status_code=404, detail="Not Found")
-        # Resolve symlinks and normalise the candidate path, then verify it
-        # stays inside the static directory to prevent directory traversal.
+        # Treat the incoming path as relative to the static directory.
+        # Strip any leading slash to avoid creating an absolute path.
         relative_path = Path(full_path.lstrip("/"))
-        candidate = (_resolved_static_dir / relative_path).resolve()
-        # Ensure the resolved candidate path is within the resolved static root.
+        # Resolve against the trusted static root, normalising ".." and symlinks.
         try:
-            # Prefer Path.is_relative_to when available (Python 3.9+).
-            is_inside = getattr(candidate, "is_relative_to", None)
-            if callable(is_inside):
-                if not candidate.is_relative_to(_resolved_static_dir):
-                    return FileResponse(index_file)
-            else:
-                static_root = str(_resolved_static_dir)
-                candidate_str = str(candidate)
-                common = os.path.commonpath([static_root, candidate_str])
-                if common != static_root:
-                    return FileResponse(index_file)
-        except (ValueError, OSError):
-            # Different drives, invalid paths, or resolution errors; treat as outside static root.
+            candidate = (_resolved_static_dir / relative_path).resolve()
+        except (OSError, RuntimeError):
+            # Invalid paths or resolution errors: fall back to the SPA index.
             return FileResponse(index_file)
+        # Ensure the resolved candidate path is within the resolved static root.
+        is_relative_to = getattr(candidate, "is_relative_to", None)
+        if callable(is_relative_to):
+            if not candidate.is_relative_to(_resolved_static_dir):
+                return FileResponse(index_file)
+        else:
+            static_root = str(_resolved_static_dir)
+            candidate_str = str(candidate)
+            try:
+                common = os.path.commonpath([static_root, candidate_str])
+            except ValueError:
+                # Different drives or invalid paths: treat as outside static root.
+                return FileResponse(index_file)
+            if common != static_root:
+                return FileResponse(index_file)
         if candidate.is_file():
             return FileResponse(candidate)
         return FileResponse(index_file)
