@@ -79,7 +79,7 @@ The following Alembic migrations are included and **must be applied** in order:
 
 - Upgraded to `@quasar/app-vite` v2
 - Upgraded to Vite 7
-- Upgraded to Node.js 20
+- Upgraded to Node.js 24
 - Switched to the new Quasar i18n plugin
 - Converted `quasar.config` to ESM format
 
