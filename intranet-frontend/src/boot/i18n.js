@@ -12,6 +12,16 @@ export default boot(({ app }) => {
   const initial = storedLocale || navigatorLocale
   const locale = messages[initial] ? initial : (initial && initial.startsWith && initial.startsWith('sv') ? 'sv-SE' : 'en-US')
 
+  // DEBUG: log available locales and chosen initial locale to assist debugging
+  try {
+    if (typeof console !== 'undefined' && console.debug) {
+      console.debug('i18n: available locales ->', Object.keys(messages))
+      console.debug('i18n: resolved initial locale ->', locale)
+    }
+  } catch (e) {
+    // ignore
+  }
+
   const i18n = createI18n({
     locale,
     globalInjection: true,
