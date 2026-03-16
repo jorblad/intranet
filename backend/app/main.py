@@ -1,9 +1,9 @@
 from pathlib import Path
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.api.routes import auth, schedules, taxonomy, users, ws, rbac, calendars, admin_messages, settings
 from app.core.config import ALLOWED_ORIGINS, STATIC_DIR
@@ -41,20 +41,7 @@ app.include_router(settings.router, prefix="/api")
 static_dir = Path(STATIC_DIR)
 
 if static_dir.exists() and (static_dir / "index.html").is_file():
-    index_file = static_dir / "index.html"
-
-    @app.get("/")
-    def serve_root():
-        return FileResponse(index_file)
-
-    @app.get("/{full_path:path}")
-    def serve_spa(full_path: str):
-        if full_path.startswith(("api", "oauth", "ws")):
-            raise HTTPException(status_code=404, detail="Not Found")
-        file_path = static_dir / full_path
-        if file_path.is_file():
-            return FileResponse(file_path)
-        return FileResponse(index_file)
+    app.mount("/", StaticFiles(directory=str(static_dir), html=True), name="static")
 else:
     @app.get("/")
     def root():
