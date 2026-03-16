@@ -752,6 +752,18 @@ async function applyRemoteTransform(transform) {
   const norm = normalizeTransform(transform)
   if (!norm) return
   const { op, scheduleId, entry, rows } = norm
+
+  // validate scheduleId to prevent prototype pollution via special keys
+  if (scheduleId == null || (typeof scheduleId !== 'string' && typeof scheduleId !== 'number')) {
+    try { console.warn('applyRemoteTransform: ignoring transform with invalid scheduleId', scheduleId) } catch (e) {}
+    return
+  }
+  const scheduleKey = String(scheduleId)
+  if (scheduleKey === '__proto__' || scheduleKey === 'constructor' || scheduleKey === 'prototype') {
+    try { console.warn('applyRemoteTransform: rejecting transform with unsafe scheduleId', scheduleKey) } catch (e) {}
+    return
+  }
+
   // normalize entry assignment arrays to canonical keys so UI mapping works
   if (entry && typeof entry === 'object') {
     try {
@@ -818,11 +830,11 @@ async function applyRemoteTransform(transform) {
   if (!scheduleId) return
   try {
     // load current rows into memory (or from IDB)
-    if (!memoryStore[scheduleId]) {
-      const fromIdb = await idbGet(scheduleId)
-      memoryStore[scheduleId] = Array.isArray(fromIdb) ? fromIdb : []
+    if (!memoryStore[scheduleKey]) {
+      const fromIdb = await idbGet(scheduleKey)
+      memoryStore[scheduleKey] = Array.isArray(fromIdb) ? fromIdb : []
     }
-    const rows = memoryStore[scheduleId]
+    const rows = memoryStore[scheduleKey]
       if (op === 'create') {
         // avoid duplicates by id (string-safe comparison)
         if (!rows.find(r => String(r.id) === String(entry.id))) rows.push(entry)
