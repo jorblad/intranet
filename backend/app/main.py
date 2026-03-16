@@ -39,6 +39,8 @@ app.include_router(settings.router, prefix="/api")
 
 
 static_dir = Path(STATIC_DIR)
+# Resolve once at module level so symlinks in STATIC_DIR are also normalised
+_resolved_static_dir = static_dir.resolve()
 
 if static_dir.exists() and (static_dir / "index.html").is_file():
     index_file = static_dir / "index.html"
@@ -51,15 +53,13 @@ if static_dir.exists() and (static_dir / "index.html").is_file():
     def serve_spa(full_path: str):
         if full_path.startswith(("api", "oauth", "ws")):
             raise HTTPException(status_code=404, detail="Not Found")
-        # Normalize the requested path and ensure it stays within static_dir
-        try:
-            candidate_path = (static_dir / full_path.lstrip("/")).resolve()
-            # This will raise ValueError if candidate_path is not within static_dir
-            candidate_path.relative_to(static_dir)
-        except ValueError:
+        # Resolve symlinks and normalise the candidate path, then verify it
+        # stays inside the static directory to prevent directory traversal.
+        candidate = (_resolved_static_dir / full_path.lstrip("/")).resolve()
+        if not candidate.is_relative_to(_resolved_static_dir):
             return FileResponse(index_file)
-        if candidate_path.is_file():
-            return FileResponse(candidate_path)
+        if candidate.is_file():
+            return FileResponse(candidate)
         return FileResponse(index_file)
 else:
     @app.get("/")
