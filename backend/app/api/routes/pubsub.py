@@ -1,4 +1,5 @@
 import asyncio
+import inspect
 import importlib
 import logging
 import os
@@ -277,7 +278,7 @@ class PubSub:
         logger.info("PubSub: calling %d local handlers", len(handlers))
         for h in handlers:
             try:
-                if asyncio.iscoroutinefunction(h):
+                if inspect.iscoroutinefunction(h):
                     await h(message)
                 else:
                     # run sync handlers in default loop executor

@@ -101,13 +101,26 @@ class OverrideClearingTestClient(TestClient):
         try:
             return super().__exit__(exc_type, exc_val, exc_tb)
         finally:
-            # Ensure overrides do not leak into subsequent tests
-            app.dependency_overrides = {}
+            # Ensure overrides do not leak into subsequent tests.
+            # Only remove overrides that this client installed (and that still match
+            # the originally installed callable) to avoid removing overrides set by
+            # other concurrent/late clients.
+            for k, v in getattr(self, "_overrides_map", {}).items():
+                try:
+                    if app.dependency_overrides.get(k) is v:
+                        app.dependency_overrides.pop(k, None)
+                except Exception:
+                    pass
 
     def __del__(self):
         # Best-effort cleanup in case the client is not used as a context manager
         try:
-            app.dependency_overrides = {}
+            for k, v in getattr(self, "_overrides_map", {}).items():
+                try:
+                    if app.dependency_overrides.get(k) is v:
+                        app.dependency_overrides.pop(k, None)
+                except Exception:
+                    pass
         except Exception:
             # Avoid raising during interpreter shutdown
             pass
@@ -123,6 +136,8 @@ def _client(db, user):
     app.dependency_overrides[get_db] = override_db
     app.dependency_overrides[get_current_user] = override_user
     client = OverrideClearingTestClient(app)
+    # remember which overrides this client installed so cleanup is targeted
+    client._overrides_map = {get_db: override_db, get_current_user: override_user}
     return client
 
 

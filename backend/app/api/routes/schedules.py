@@ -9,7 +9,6 @@ from app.models import Schedule
 
 # TestClient-based route tests for schedules/entries bulk APIs
 from fastapi import FastAPI
-from fastapi.testclient import TestClient
 import sys
 import types
 from types import SimpleNamespace
@@ -308,7 +307,7 @@ def entries_bulk_update(
 
     try:
         from app.crud.entry import bulk_update_entries
-        updates = [p.dict(exclude_unset=True) for p in payload]
+        updates = [p.model_dump(exclude_unset=True) for p in payload]
         try:
             print(f"entries_bulk_update: received {len(updates)} updates")
         except Exception:
@@ -457,6 +456,7 @@ def test_entries_bulk_update_forbidden_for_user_not_assigned_to_org():
 
     # We don't need bulk_update_entries here because the request should be rejected
     # by authorization before any DB logic executes.
+    from fastapi.testclient import TestClient
     client = TestClient(app)
 
     response = client.patch(
@@ -482,6 +482,46 @@ def test_entries_bulk_update_success_path_updates():
 
     def fake_bulk_update_entries(_db, _schedule, payload):
         # Echo back payload as "updated" entries with an extra field to prove it ran.
+        from types import SimpleNamespace as SN
+        import datetime
+        out = []
+        for p in payload:
+            ent = SN()
+            ent.id = p.get('id') or 'entry-created'
+            ent.schedule_id = _schedule
+            # normalize date if provided as ISO string
+            dt = p.get('date')
+            if isinstance(dt, str):
+                try:
+                    ent.date = datetime.date.fromisoformat(dt)
+                except Exception:
+                    ent.date = None
+            else:
+                ent.date = dt
+            ent.start = None
+            ent.end = None
+            ent.name = p.get('name')
+            ent.description = p.get('description')
+            ent.notes = p.get('notes')
+            ent.public_event = p.get('public_event', False)
+            ent.responsible_users = [SN(id=x) for x in (p.get('responsible_ids') or [])]
+            ent.devotional_users = [SN(id=x) for x in (p.get('devotional_ids') or [])]
+            ent.cant_come_users = [SN(id=x) for x in (p.get('cant_come_ids') or [])]
+            out.append(ent)
+        return out
+
+    # Install our fake bulk updater and exercise the endpoint
+    _set_fake_bulk_update_entries(fake_bulk_update_entries)
+    from fastapi.testclient import TestClient
+    client = TestClient(app)
+    payload = [{"id": "entry-1", "name": "Name 1"}]
+    response = client.patch(f"/schedules/{schedule.id}/entries/bulk", json=payload)
+    restore()
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json().get("data")
+    assert isinstance(data, list)
+    assert len(data) == len(payload)
+    assert data[0]["name"] == "Name 1"
 def entries_bulk_create(
     schedule_id: str,
     payload: List[EntryCreate],
@@ -501,7 +541,7 @@ def entries_bulk_create(
     # normalize payload to list of dicts suitable for bulk create
     entries_data = []
     for p in payload:
-        entries_data.append(p.dict())
+        entries_data.append(p.model_dump())
 
     try:
         from app.crud.entry import bulk_create_entries

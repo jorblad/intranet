@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.orm import Session
 from datetime import datetime
 import os
@@ -33,7 +33,7 @@ def _has_global_org_admin(user) -> bool:
 
 
 @router.get("/admin/messages")
-def admin_messages_index(organization_id: str | None = None, active: bool = True, placement: str | None = None, db: Session = Depends(get_db), _user=Depends(get_current_user)):
+def admin_messages_index(organization_id: str | None = None, active: bool = True, placement: str | None = None, request: Request = None, db: Session = Depends(get_db), _user=Depends(get_current_user)):
     # Anyone may read messages for an organization they are assigned to or global messages
     # if organization_id provided, ensure the user is assigned to the org (or allow superadmin)
     if organization_id is not None:
@@ -49,6 +49,10 @@ def admin_messages_index(organization_id: str | None = None, active: bool = True
 
             if not user_assigned_to_org(_user, organization_id):
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not allowed to view messages for this organization")
+
+    # (no-op) — dependency overrides are handled by FastAPI; tests may set these via
+    # `app.dependency_overrides` prior to creating a TestClient. Leave function body
+    # to proceed to listing messages.
 
     items = list_admin_messages_for_org(db, organization_id, active_only=active, placement=placement)
     return [AdminMessageOut(**{
@@ -188,7 +192,7 @@ def admin_messages_update(msg_id: str, payload: AdminMessageUpdate, db: Session 
         require_org_admin_or_superadmin(_user, msg.organization_id)
 
     # Build update payload, only including fields that were actually provided by the client
-    update_data = payload.dict(exclude_unset=True)
+    update_data = payload.model_dump(exclude_unset=True)
 
     # If changing target organization, validate the target org and require permission for it
     if "organization_id" in update_data and update_data.get("organization_id") != msg.organization_id:
