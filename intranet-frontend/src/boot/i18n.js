@@ -1,7 +1,7 @@
 import { boot } from 'quasar/wrappers'
 import { createI18n } from 'vue-i18n'
 import { watch } from 'vue'
-import messages from 'src/i18n'
+import rawMessages from 'src/i18n'
 import { useAuth } from 'src/services/auth'
 import axios from 'axios'
 
@@ -20,6 +20,37 @@ export default boot(({ app }) => {
     }
   } catch (e) {
     // ignore
+  }
+
+  // allow replacing messages at runtime if the static import is empty
+  let messages = rawMessages
+
+  // If the plugin or loader produced an empty object, attempt a runtime
+  // eager glob import of locale modules as a fallback so translations
+  // are available during dev and HMR.
+  if (!messages || Object.keys(messages).length === 0) {
+    try {
+      const modules = import.meta.glob('../i18n/*/index.js', { eager: true })
+      const loaded = {}
+      for (const p in modules) {
+        try {
+          const mod = modules[p]
+          const parts = p.split('/')
+          const localeKey = parts[parts.length - 2]
+          loaded[localeKey] = mod.default || mod
+          const short = localeKey.split('-')[0]
+          if (!loaded[short]) loaded[short] = loaded[localeKey]
+        } catch (e) {
+          // ignore individual module load failures
+        }
+      }
+      if (Object.keys(loaded).length > 0) {
+        messages = loaded
+        try { console.debug('i18n: fallback loaded locales ->', Object.keys(messages)) } catch (e) {}
+      }
+    } catch (e) {
+      try { console.debug('i18n: fallback import failed', e) } catch (er) {}
+    }
   }
 
   const i18n = createI18n({
