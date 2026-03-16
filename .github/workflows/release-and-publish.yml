@@ -90,6 +90,17 @@ jobs:
             ghcr.io/${{ github.repository_owner }}/intranet-backend:${{ steps.semver.outputs.new_tag }}
             ghcr.io/${{ github.repository_owner }}/intranet-backend:latest
 
+      - name: Build and push frontend image to GHCR
+        if: steps.label.outputs.bump != 'none'
+        uses: docker/build-push-action@v7
+        with:
+          context: ./intranet-frontend
+          file: intranet-frontend/Dockerfile.prod
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/intranet-frontend:${{ steps.semver.outputs.new_tag }}
+            ghcr.io/${{ github.repository_owner }}/intranet-frontend:latest
+
       - name: Optionally push to Docker Hub
         if: steps.label.outputs.bump != 'none'
         env:
@@ -101,10 +112,16 @@ jobs:
             exit 0
           fi
           echo "$DOCKERHUB_TOKEN" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin
+          # Backend
           docker tag ghcr.io/${{ github.repository_owner }}/intranet-backend:${{ steps.semver.outputs.new_tag }} ${DOCKERHUB_USERNAME}/intranet-backend:${{ steps.semver.outputs.new_tag }}
           docker tag ghcr.io/${{ github.repository_owner }}/intranet-backend:latest ${DOCKERHUB_USERNAME}/intranet-backend:latest
           docker push ${DOCKERHUB_USERNAME}/intranet-backend:${{ steps.semver.outputs.new_tag }}
           docker push ${DOCKERHUB_USERNAME}/intranet-backend:latest
+          # Frontend
+          docker tag ghcr.io/${{ github.repository_owner }}/intranet-frontend:${{ steps.semver.outputs.new_tag }} ${DOCKERHUB_USERNAME}/intranet-frontend:${{ steps.semver.outputs.new_tag }}
+          docker tag ghcr.io/${{ github.repository_owner }}/intranet-frontend:latest ${DOCKERHUB_USERNAME}/intranet-frontend:latest
+          docker push ${DOCKERHUB_USERNAME}/intranet-frontend:${{ steps.semver.outputs.new_tag }}
+          docker push ${DOCKERHUB_USERNAME}/intranet-frontend:latest
 
       - name: Create Git tag and GitHub release (API)
         if: steps.label.outputs.bump != 'none'
