@@ -99,7 +99,7 @@ const filteredOrgs = computed(() => {
 async function load() {
   try {
     const res = await axios.get('/api/rbac/organizations')
-    orgs.value = res.data
+    orgs.value = res.data?.data || res.data || []
   } catch (err) {
     $q.notify({ type: 'negative', message: t('orgs.create_failed') || 'Failed to load organizations' })
   }

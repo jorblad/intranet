@@ -7,7 +7,43 @@
     <meta name="description" content="<%= productDescription %>">
     <meta name="format-detection" content="telephone=no">
     <meta name="msapplication-tap-highlight" content="no">
-    <meta name="viewport" content="user-scalable=no, initial-scale=1, maximum-scale=1, minimum-scale=1, width=device-width<% if (ctx.mode.cordova || ctx.mode.capacitor) { %>, viewport-fit=cover<% } %>">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <script>
+      // Add viewport-fit=cover at runtime when running inside native wrappers
+      (function () {
+        function addViewportFit() {
+          try {
+            var meta = document.querySelector('meta[name="viewport"]')
+            if (!meta) return
+            var c = meta.getAttribute('content') || ''
+            if (c.indexOf('viewport-fit') === -1) {
+              meta.setAttribute('content', c + ', viewport-fit=cover')
+            }
+          } catch (e) {}
+        }
+
+        try {
+          // Cordova fires deviceready when available
+          if (typeof window !== 'undefined' && window.cordova) {
+            document.addEventListener('deviceready', addViewportFit, { once: true })
+            // also try immediately in case cordova is already initialized
+            addViewportFit()
+            return
+          }
+
+          // Capacitor or other native wrappers can be detected via global or userAgent
+          if (typeof window !== 'undefined' && window.Capacitor) {
+            addViewportFit()
+            return
+          }
+
+          if (typeof navigator !== 'undefined' && /cordova|capacitor|native/i.test(navigator.userAgent)) {
+            addViewportFit()
+            return
+          }
+        } catch (e) {}
+      })();
+    </script>
 
     <link rel="icon" type="image/png" sizes="128x128" href="icons/favicon-128x128.png">
     <link rel="icon" type="image/png" sizes="96x96" href="icons/favicon-96x96.png">
@@ -17,8 +53,12 @@
     <script>
       // Dev helper: use docker-compose API proxy target when available in browser
       // Default maps to host port 8200 -> container 8000 in docker-compose.dev.yml
+      // Avoid forcing this when running the local dev server (port 9000) so Vite proxy works.
       try {
-        if (!window.__API_PROXY_TARGET__) window.__API_PROXY_TARGET__ = 'http://localhost:8200'
+        const devPort = (typeof location !== 'undefined' && location && location.port) ? String(location.port) : ''
+        if (!window.__API_PROXY_TARGET__ && devPort !== '9000') {
+          window.__API_PROXY_TARGET__ = 'http://localhost:8200'
+        }
       } catch (e) {}
     </script>
   </head>

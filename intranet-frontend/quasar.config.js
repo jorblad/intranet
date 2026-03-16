@@ -9,13 +9,17 @@
 // https://v2.quasar.dev/quasar-cli-vite/quasar-config-js
 
 
-const { configure } = require('quasar/wrappers');
-const path = require('path');
+import { defineConfig } from '#q-app/wrappers'
+import path from 'path'
+import { fileURLToPath } from 'url'
+
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
 
 const apiProxyTarget = process.env.API_PROXY_TARGET || 'http://localhost:8000';
 const wsProxyTarget = apiProxyTarget.replace(/^http/, 'ws');
 
-module.exports = configure(function (/* ctx */) {
+export default defineConfig((ctx) => {
   return {
     eslint: {
       // fix: true,
@@ -34,6 +38,7 @@ module.exports = configure(function (/* ctx */) {
     // https://v2.quasar.dev/quasar-cli/boot-files
     boot: [
       'i18n',
+      'qiconpicker',
 
     ],
 
@@ -83,16 +88,9 @@ module.exports = configure(function (/* ctx */) {
       // viteVuePluginOptions: {},
 
       vitePlugins: [
-        ['@intlify/vite-plugin-vue-i18n', {
-          // if you want to use Vue I18n Legacy API, you need to set `compositionOnly: false`
-          // compositionOnly: false,
-
-          // if you want to use named tokens in your Vue I18n messages, such as 'Hello {name}',
-          // you need to set `runtimeOnly: false`
-          // runtimeOnly: false,
-
-          // you need to set i18n resource including paths !
-          include: path.resolve(__dirname, './src/i18n/**')
+        ['@intlify/unplugin-vue-i18n/vite', {
+          include: [ path.resolve(__dirname, './src/i18n/**') ],
+          ssr: ctx.modeName === 'ssr'
         }]
       ]
     },

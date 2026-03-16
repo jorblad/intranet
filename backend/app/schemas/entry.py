@@ -38,3 +38,7 @@ class EntryUpdate(BaseModel):
 class EntryOut(EntryBase):
     id: str
     schedule_id: str
+
+
+class EntryBulkUpdate(EntryUpdate):
+    id: str

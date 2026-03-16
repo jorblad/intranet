@@ -70,9 +70,9 @@ const orgs = ref([])
 const form = ref({ user_id: null, role_id: null, organization_id: null })
 const showAll = ref(false)
 
-const userOptions = computed(() => users.value.map(u => ({ label: u.attributes.display_name, value: String(u.id) })))
-const roleOptions = computed(() => roles.value.map(r => ({ label: r.name, value: String(r.id) })))
-const orgOptions = computed(() => [{ label: 'Global', value: null }, ...orgs.value.map(o => ({ label: o.name, value: String(o.id) }))])
+const userOptions = computed(() => (users.value || []).map(u => ({ label: u.attributes?.display_name || u.attributes?.name || u.display_name || u.name || String(u.id), value: String(u.id) })))
+const roleOptions = computed(() => (roles.value || []).map(r => ({ label: r.attributes?.name || r.name || String(r.id), value: String(r.id) })))
+const orgOptions = computed(() => [{ label: 'Global', value: null }, ...((orgs.value || []).map(o => ({ label: o.attributes?.name || o.name || String(o.id), value: String(o.id) })) )])
 
 const search = ref('')
 const columns = [
@@ -109,9 +109,9 @@ async function load() {
       axios.get('/api/rbac/roles'),
       axios.get('/api/rbac/organizations'),
     ])
-    users.value = uRes.data.data
-    roles.value = rRes.data
-    orgs.value = oRes.data
+    users.value = uRes.data?.data || uRes.data || []
+    roles.value = rRes.data?.data || rRes.data || []
+    orgs.value = oRes.data?.data || oRes.data || []
 
     // don't preselect a user; showAll for superadmin or org_admin
     form.value.user_id = null
@@ -242,18 +242,18 @@ async function remove(id) {
 
 function userLabel(uid) {
   const u = users.value.find(x => String(x.id) === String(uid))
-  return u ? `${u.attributes.display_name} (${u.attributes.username})` : String(uid)
+  return u ? `${u.attributes?.display_name || u.display_name || u.attributes?.name || u.name || String(u.id)} (${u.attributes?.username || u.username || ''})` : String(uid)
 }
 
 function roleLabel(rid) {
   const r = roles.value.find(x => String(x.id) === String(rid))
-  return r ? r.name : String(rid)
+  return r ? (r.attributes?.name || r.name || String(r.id)) : String(rid)
 }
 
 function orgLabel(oid) {
   if (!oid) return 'global'
   const o = orgs.value.find(x => String(x.id) === String(oid))
-  return o ? o.name : String(oid)
+  return o ? (o.attributes?.name || o.name || String(o.id)) : String(oid)
 }
 
 function onSearch() {

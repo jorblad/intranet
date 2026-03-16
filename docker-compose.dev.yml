@@ -22,9 +22,11 @@ services:
     build:
       context: ./backend
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    working_dir: /app
     volumes:
       - ./backend:/app
     environment:
+      - PYTHONPATH=/app
       - DATABASE_URL=postgresql+psycopg2://intranet:intranet_password@db:5432/intranet_db
       - SECRET_KEY=dev-secret
       - ACCESS_TOKEN_EXPIRE_MINUTES=120

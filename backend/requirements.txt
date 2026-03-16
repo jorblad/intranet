@@ -8,3 +8,4 @@ passlib[bcrypt]
 pydantic
 psycopg2-binary
 valkey[libvalkey]
+requests

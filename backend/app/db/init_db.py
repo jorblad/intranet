@@ -1,5 +1,7 @@
 import time
 import uuid
+import os
+import secrets
 from datetime import date
 
 from sqlalchemy import exc as sa_exc
@@ -84,76 +86,27 @@ def init_db() -> None:
             return
 
         if not admin_user:
+            # Create only the admin user. Username/password can be provided
+            # via environment variables `ADMIN_USERNAME` and `ADMIN_PASSWORD`.
+            admin_username = os.getenv("ADMIN_USERNAME", "admin")
+            admin_password = os.getenv("ADMIN_PASSWORD")
+            if not admin_password:
+                admin_password = secrets.token_urlsafe(16)
+                print(
+                    "init_db: No ADMIN_PASSWORD provided; generated a temporary admin "
+                    f"password for user '{admin_username}': {admin_password}. "
+                    "Please change this password immediately after first login."
+                )
             admin = User(
                 id=str(uuid.uuid4()),
-                username="admin",
+                username=admin_username,
                 display_name="Admin",
-                hashed_password=get_password_hash("password"),
+                hashed_password=get_password_hash(admin_password),
                 is_active=True,
             )
             db.add(admin)
             db.flush()
             admin_user = admin
-
-        # Seed basic roles and permissions
-        if not db.query(Role).filter(Role.name == 'superadmin').first():
-            super_r = Role(id=str(uuid.uuid4()), name='superadmin', description='Full access to all organizations', is_global=True)
-            org_admin_r = Role(id=str(uuid.uuid4()), name='org_admin', description='Organization administrator')
-            member_r = Role(id=str(uuid.uuid4()), name='member', description='Organization member')
-            db.add_all([super_r, org_admin_r, member_r])
-            db.flush()
-
-            # assign admin_user as superadmin (global role with no organization)
-            if admin_user:
-                uar = UserOrganizationRole(id=str(uuid.uuid4()), user_id=admin_user.id, organization_id=None, role_id=super_r.id)
-                db.add(uar)
-
-
-        activity_a = None
-        activity_b = None
-        if not db.query(Term).first():
-            term_fall = Term(id=str(uuid.uuid4()), name="Host 2023")
-            term_winter = Term(id=str(uuid.uuid4()), name="Vinter 2024")
-            db.add_all([term_fall, term_winter])
-            db.flush()
-
-            activity_a = Activity(
-                id=str(uuid.uuid4()),
-                name="Ungdomskvall",
-                organization_id=None,
-            )
-            activity_b = Activity(
-                id=str(uuid.uuid4()),
-                name="Junior",
-                organization_id=None,
-            )
-            db.add_all([activity_a, activity_b])
-
-        if not db.query(Schedule).first():
-            if not activity_a:
-                activity_a = db.query(Activity).first()
-            if activity_a:
-                schedule = Schedule(
-                    id=str(uuid.uuid4()),
-                    name=f"Schema {activity_a.name}",
-                    term_id=term_fall.id,
-                    activity_id=activity_a.id,
-                )
-                db.add(schedule)
-                db.flush()
-
-                entry = ScheduleEntry(
-                    id=str(uuid.uuid4()),
-                    schedule_id=schedule.id,
-                    date=date(2023, 9, 6),
-                    name="Start",
-                    description="Kickoff",
-                    notes="",
-                    public_event=True,
-                )
-                if admin_user:
-                    entry.responsible_users = [admin_user]
-                db.add(entry)
 
         db.commit()
     finally:
