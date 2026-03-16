@@ -1,10 +1,9 @@
 from pathlib import Path
 from contextlib import asynccontextmanager
-import os
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.api.routes import auth, schedules, taxonomy, users, ws, rbac, calendars, admin_messages, settings
 from app.core.config import ALLOWED_ORIGINS, STATIC_DIR
@@ -40,47 +39,9 @@ app.include_router(settings.router, prefix="/api")
 
 
 static_dir = Path(STATIC_DIR)
-# Resolve once at module level so symlinks in STATIC_DIR are also normalised
-_resolved_static_dir = static_dir.resolve()
 
 if static_dir.exists() and (static_dir / "index.html").is_file():
-    index_file = static_dir / "index.html"
-
-    @app.get("/")
-    def serve_root():
-        return FileResponse(index_file)
-
-    @app.get("/{full_path:path}")
-    def serve_spa(full_path: str):
-        if full_path.startswith(("api", "oauth", "ws")):
-            raise HTTPException(status_code=404, detail="Not Found")
-        # Treat the incoming path as relative to the static directory.
-        # Strip any leading slash to avoid creating an absolute path.
-        relative_path = Path(full_path.lstrip("/"))
-        # Resolve against the trusted static root, normalising ".." and symlinks.
-        try:
-            candidate = (_resolved_static_dir / relative_path).resolve()
-        except (OSError, RuntimeError):
-            # Invalid paths or resolution errors: fall back to the SPA index.
-            return FileResponse(index_file)
-        # Ensure the resolved candidate path is within the resolved static root.
-        is_relative_to = getattr(candidate, "is_relative_to", None)
-        if callable(is_relative_to):
-            if not candidate.is_relative_to(_resolved_static_dir):
-                return FileResponse(index_file)
-        else:
-            static_root = str(_resolved_static_dir)
-            candidate_str = str(candidate)
-            try:
-                common = os.path.commonpath([static_root, candidate_str])
-            except ValueError:
-                # Different drives or invalid paths: treat as outside static root.
-                return FileResponse(index_file)
-            if common != static_root:
-                return FileResponse(index_file)
-        if candidate.is_file():
-            return FileResponse(candidate)
-        return FileResponse(index_file)
+    app.mount("/", StaticFiles(directory=str(static_dir), html=True), name="static")
 else:
     @app.get("/")
     def root():
