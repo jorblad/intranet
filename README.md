@@ -28,6 +28,21 @@ Databas och migreringar
 docker compose -f docker-compose.dev.yml exec backend alembic upgrade heads
 ```
 
+Konfiguration (miljövariabler)
+- **ALLOWED_ORIGINS**: valfri kommaseparerad lista med ursprung som är tillåtna för CORS, t.ex. `https://church.example.com,https://admin.church.example.com`.
+- **FRONTEND_URL** / **FRONTEND_URLS**: alternativt sätt att ange frontend-URL(s); används om `ALLOWED_ORIGINS` saknas.
+- **ALLOWED_ORIGIN_REGEX**: (valfritt) ett regex som matchar tillåtna origin-värden, t.ex. `^https?://(.+\\.)?church\\.example\\.com$`.
+- **CORS_ALLOW_CREDENTIALS**: `true|false` om `Access-Control-Allow-Credentials` ska sättas (behövs om du använder cookies tvärs över domäner).
+- **STATIC_DIR**: katalog i containern där frontend-byggresultatet (Quasar `dist/spa`) finns; ställs normalt till `/frontend` eller till standardvägen i koden.
+
+Exempel: för produktion där frontend ligger på `church.example.com` och API på `api.church.example.com` kan du exportera:
+```bash
+export FRONTEND_URL=https://church.example.com
+export ALLOWED_ORIGINS=https://church.example.com
+export CORS_ALLOW_CREDENTIALS=false
+export STATIC_DIR=/frontend
+```
+
 CI / Release workflow
  - När en PR med label `major`, `minor` eller `patch` mergas, en GitHub Action beräknar nästa semver-tag, bygger och pushar Docker-image till GHCR, skapar en `release/<tag>`-gren med uppdaterad `docker-compose.yml` och öppnar en PR mot `main`. När status-checks passerar så auto-mergas PR:en.
 

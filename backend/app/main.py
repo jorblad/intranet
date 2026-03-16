@@ -6,7 +6,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from app.api.routes import auth, schedules, taxonomy, users, ws, rbac, calendars, admin_messages, settings
-from app.core.config import ALLOWED_ORIGINS, STATIC_DIR
+from app.core.config import (
+    ALLOWED_ORIGINS,
+    ALLOWED_ORIGIN_REGEX,
+    CORS_ALLOW_CREDENTIALS,
+    STATIC_DIR,
+)
 from app.db.init_db import init_db
 
 
@@ -19,13 +24,16 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Intranet API", lifespan=lifespan)
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS,
-    allow_credentials=False,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+cors_kwargs = {
+    "allow_origins": ALLOWED_ORIGINS,
+    "allow_methods": ["*"],
+    "allow_headers": ["*"],
+    "allow_credentials": CORS_ALLOW_CREDENTIALS,
+}
+if ALLOWED_ORIGIN_REGEX:
+    cors_kwargs["allow_origin_regex"] = ALLOWED_ORIGIN_REGEX
+
+app.add_middleware(CORSMiddleware, **cors_kwargs)
 
 app.include_router(auth.router)
 app.include_router(users.router, prefix="/api")
