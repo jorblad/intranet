@@ -10,20 +10,10 @@ export default boot(({ app }) => {
   const storedLocale = (typeof localStorage !== 'undefined' && localStorage.getItem('locale')) || null
   const navigatorLocale = (typeof navigator !== 'undefined' && navigator.language) ? navigator.language : 'en-US'
   const initial = storedLocale || navigatorLocale
-  const locale = messages[initial] ? initial : (initial && initial.startsWith && initial.startsWith('sv') ? 'sv-SE' : 'en-US')
-
-  // DEBUG: log available locales and chosen initial locale to assist debugging
-  try {
-    if (typeof console !== 'undefined' && console.debug) {
-      console.debug('i18n: available locales ->', Object.keys(messages))
-      console.debug('i18n: resolved initial locale ->', locale)
-    }
-  } catch (e) {
-    // ignore
-  }
-
   // allow replacing messages at runtime if the static import is empty
   let messages = rawMessages
+
+  const locale = messages && messages[initial] ? initial : (initial && initial.startsWith && initial.startsWith('sv') ? 'sv-SE' : 'en-US')
 
   // If the plugin or loader produced an empty object, attempt a runtime
   // eager glob import of locale modules as a fallback so translations
@@ -51,6 +41,16 @@ export default boot(({ app }) => {
     } catch (e) {
       try { console.debug('i18n: fallback import failed', e) } catch (er) {}
     }
+  }
+
+  // DEBUG: log available locales and chosen initial locale to assist debugging
+  try {
+    if (typeof console !== 'undefined' && console.debug) {
+      console.debug('i18n: available locales ->', Object.keys(messages || {}))
+      console.debug('i18n: resolved initial locale ->', locale)
+    }
+  } catch (e) {
+    // ignore
   }
 
   const i18n = createI18n({
