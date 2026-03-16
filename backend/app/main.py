@@ -1,5 +1,6 @@
 from pathlib import Path
 from contextlib import asynccontextmanager
+import os
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -55,8 +56,17 @@ if static_dir.exists() and (static_dir / "index.html").is_file():
             raise HTTPException(status_code=404, detail="Not Found")
         # Resolve symlinks and normalise the candidate path, then verify it
         # stays inside the static directory to prevent directory traversal.
-        candidate = (_resolved_static_dir / full_path.lstrip("/")).resolve()
-        if not candidate.is_relative_to(_resolved_static_dir):
+        relative_path = Path(full_path.lstrip("/"))
+        candidate = (_resolved_static_dir / relative_path).resolve()
+        static_root = str(_resolved_static_dir)
+        candidate_str = str(candidate)
+        # Ensure the resolved candidate path is within the resolved static root.
+        try:
+            common = os.path.commonpath([static_root, candidate_str])
+        except ValueError:
+            # Different drives or invalid paths; treat as outside static root.
+            return FileResponse(index_file)
+        if common != static_root:
             return FileResponse(index_file)
         if candidate.is_file():
             return FileResponse(candidate)
