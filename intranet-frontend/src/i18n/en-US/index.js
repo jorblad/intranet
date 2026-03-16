@@ -249,7 +249,7 @@ export default {
     invite_subject: 'Invite email subject',
     invite_html: 'Invite email (HTML)',
     invite_text: 'Invite email (plain text)',
-    invite_help: 'Use {link} in the template where the invite URL should appear. You can also reference {username} and {display} in templates (e.g. "Your username is {username}"). For HTML templates you can include: <a href="{link}">this link</a>.',
+    invite_help: 'Use {link} in the template where the invite URL should appear. You can also reference {username} and {display} in templates (e.g. "Your username is {username}"). For HTML templates, include the link in an anchor tag (for example: a href="{link}").',
     save_success: 'Settings saved',
     save_failed: 'Failed to save settings',
     load_failed: 'Failed to load settings',

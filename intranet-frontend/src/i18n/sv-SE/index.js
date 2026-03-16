@@ -281,7 +281,7 @@ export default {
     invite_subject: 'Ämne för inbjudningsmail',
     invite_html: 'Inbjudningsmail (HTML)',
     invite_text: 'Inbjudningsmail (ren text)',
-    invite_help: 'Använd {link} i mallen där inbjudnings-URL:en ska infogas. Du kan även använda {username} och {display} i mallen (t.ex. "Ditt användarnamn är {username}"). För HTML-mallar kan du använda: <a href="{link}">denna länk</a>.',
+    invite_help: 'Använd {link} i mallen där inbjudnings-URL:en ska infogas. Du kan även använda {username} och {display} i mallen (t.ex. "Ditt användarnamn är {username}"). För HTML-mallar, inkludera länken i en anchor-tagg (t.ex. a href="{link}").',
     save_success: 'Inställningar sparade',
     save_failed: 'Misslyckades med att spara inställningar',
     load_failed: 'Misslyckades med att ladda inställningar',
