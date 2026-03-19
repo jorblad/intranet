@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html>
   <head>
+    <script src="/runtime-config.js"></script>
     <title><%= productName %></title>
 
     <meta charset="utf-8">
@@ -55,8 +56,8 @@
       // Default maps to host port 8200 -> container 8000 in docker-compose.dev.yml
       // Avoid forcing this when running the local dev server (port 9000) so Vite proxy works.
       try {
-        const devPort = (typeof location !== 'undefined' && location && location.port) ? String(location.port) : ''
-        if (!window.__API_PROXY_TARGET__ && devPort !== '9000') {
+        // Only default to localhost:8200 in obvious local dev contexts (localhost or 127.0.0.1).
+        if (!window.__API_PROXY_TARGET__ && (typeof location !== 'undefined' && (location.hostname === 'localhost' || location.hostname === '127.0.0.1'))) {
           window.__API_PROXY_TARGET__ = 'http://localhost:8200'
         }
       } catch (e) {}

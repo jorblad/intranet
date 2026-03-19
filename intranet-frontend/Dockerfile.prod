@@ -13,5 +13,8 @@ RUN npm run build
 FROM nginx:stable-alpine
 # Copy the built SPA into nginx html folder (adjust path if Quasar output differs)
 COPY --from=build /app/dist/spa /usr/share/nginx/html
+COPY docker-entrypoint.sh /docker-entrypoint.sh
+RUN chmod +x /docker-entrypoint.sh
 EXPOSE 80
+ENTRYPOINT ["/docker-entrypoint.sh"]
 CMD ["nginx", "-g", "daemon off;"]
