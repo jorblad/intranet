@@ -10,8 +10,6 @@ from sqlalchemy import exc as sa_exc
 from app.core.security import get_password_hash
 from app.db.base import Base
 from app.db.session import SessionLocal, engine
-
-logger = logging.getLogger(__name__)
 from sqlalchemy import inspect, text
 from app.models import (
     Schedule,
@@ -25,6 +23,8 @@ from app.models import (
     UserOrganizationRole,
     Activity,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def init_db() -> None:
