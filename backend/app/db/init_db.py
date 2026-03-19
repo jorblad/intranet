@@ -108,6 +108,31 @@ def init_db() -> None:
             db.flush()
             admin_user = admin
 
+        # Ensure a global `superadmin` role exists and assign it to the admin user
+        try:
+            super_role = db.query(Role).filter(Role.name == "superadmin").first()
+            if not super_role:
+                super_role = Role(name="superadmin", description="Default superadmin role", is_global=True)
+                db.add(super_role)
+                db.flush()
+
+            # If the admin user isn't already globally assigned the superadmin role, assign it
+            existing_assign = (
+                db.query(UserOrganizationRole)
+                .filter(
+                    UserOrganizationRole.user_id == admin_user.id,
+                    UserOrganizationRole.role_id == super_role.id,
+                    UserOrganizationRole.organization_id == None,
+                )
+                .first()
+            )
+            if not existing_assign:
+                assign = UserOrganizationRole(user_id=admin_user.id, role_id=super_role.id, organization_id=None)
+                db.add(assign)
+        except Exception:
+            # best-effort: don't block startup on seeding errors
+            pass
+
         db.commit()
     finally:
         db.close()
