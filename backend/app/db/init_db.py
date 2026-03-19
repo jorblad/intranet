@@ -2,7 +2,7 @@ import time
 import uuid
 import os
 import secrets
-from datetime import date
+import logging
 
 from sqlalchemy import exc as sa_exc
 
@@ -22,6 +22,8 @@ from app.models import (
     UserOrganizationRole,
     Activity,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def init_db() -> None:
@@ -65,9 +67,18 @@ def init_db() -> None:
 
     db = SessionLocal()
     skip_seeding = False
+    # Determine the intended admin username (used both for lookup and creation)
+    admin_username = os.getenv("ADMIN_USERNAME", "admin")
     try:
+        had_existing_users = None
+        admin_was_first_user = False
         try:
-            admin_user = db.query(User).first()
+            # Determine whether any users exist before creating the admin user.
+            had_existing_users = db.query(User.id).first() is not None
+
+            # Look up the intended admin user explicitly by username instead of using an
+            # arbitrary first() result, which has no deterministic ordering.
+            admin_user = db.query(User).filter(User.username == admin_username).first()
         except Exception as e:
             # If the users table or new columns are missing (during migration),
             # rollback the session to clear any aborted transaction and skip all
@@ -88,7 +99,6 @@ def init_db() -> None:
         if not admin_user:
             # Create only the admin user. Username/password can be provided
             # via environment variables `ADMIN_USERNAME` and `ADMIN_PASSWORD`.
-            admin_username = os.getenv("ADMIN_USERNAME", "admin")
             admin_password = os.getenv("ADMIN_PASSWORD")
             if not admin_password:
                 admin_password = secrets.token_urlsafe(16)
@@ -107,6 +117,121 @@ def init_db() -> None:
             db.add(admin)
             db.flush()
             admin_user = admin
+            # Only treat this admin as the "first user" if there were no users before.
+            if had_existing_users is not None:
+                admin_was_first_user = not had_existing_users
+
+        # Commit core seeding (e.g., admin user creation) before best-effort role seeding
+        db.commit()
+
+        # Ensure a global `superadmin` role exists and, on a fresh DB, assign it to
+        # the newly created admin user. Avoid granting superadmin to an arbitrary
+        # existing user on a non-empty database.
+        try:
+            super_role = db.query(Role).filter(Role.name == "superadmin").first()
+            if not super_role:
+                super_role = Role(
+                    name="superadmin",
+                    description="Default superadmin role",
+                    is_global=True,
+                )
+                try:
+                    db.add(super_role)
+                    db.flush()
+                except sa_exc.IntegrityError:
+                    # Another concurrent initializer may have created the superadmin
+                    # role after our initial existence check but before this flush.
+                    # Roll back this failed insert and re-query the role so we can
+                    # continue with assignment logic using the existing row.
+                    db.rollback()
+                    super_role = (
+                        db.query(Role).filter(Role.name == "superadmin").first()
+                    )
+                    if not super_role:
+                        # If the role still does not exist, propagate the error so the
+                        # outer handler can log and handle it as before.
+                        raise
+                    elif not getattr(super_role, "is_global", False):
+                        # A concurrent initializer may have created a non-global 'superadmin' role.
+                        # Ensure the existing role is marked as global so permission checks work correctly.
+                        super_role.is_global = True
+                        db.add(super_role)
+            elif not getattr(super_role, "is_global", False):
+                # Legacy databases might have a non-global 'superadmin' role.
+                # Ensure the existing role is marked as global so permission checks work correctly.
+                super_role.is_global = True
+                db.add(super_role)
+
+            # Decide whether we should grant the superadmin role to the admin user.
+            # Normally this is only when the admin was created as the first user in
+            # this init run, but we also want to repair a partial seed where the
+            # admin exists as the only user but lacks the superadmin assignment.
+            should_grant_superadmin = admin_was_first_user and admin_user is not None
+            if not should_grant_superadmin and admin_user:
+                try:
+                    # Check if there exists any user other than the admin; avoid a full COUNT(*).
+                    other_user = (
+                        db.query(User.id)
+                        .filter(User.id != admin_user.id)
+                        .first()
+                    )
+                    if other_user is None:
+                        # The admin is the only user in the system; treat this as a
+                        # "fresh DB" and ensure they get superadmin.
+                        should_grant_superadmin = True
+                except Exception:
+                    # If checking for additional users fails (e.g., during migrations),
+                    # skip this best-effort repair and let startup continue.
+                    pass
+
+            if should_grant_superadmin:
+                # If the admin user isn't already globally assigned the superadmin role, assign it.
+                existing_assign = (
+                    db.query(UserOrganizationRole)
+                        .filter(
+                            UserOrganizationRole.user_id == admin_user.id,
+                            UserOrganizationRole.role_id == super_role.id,
+                            UserOrganizationRole.organization_id.is_(None),
+                        )
+                        .first()
+                )
+                if not existing_assign:
+                    assign = UserOrganizationRole(
+                        user_id=admin_user.id,
+                        role_id=super_role.id,
+                        organization_id=None,
+                    )
+                    try:
+                        # Attempt to insert the global superadmin assignment. In a concurrent
+                        # init scenario another process may do the same, so we flush here
+                        # to surface any integrity errors immediately.
+                        db.add(assign)
+                        db.flush()
+                    except sa_exc.IntegrityError:
+                        # A concurrent initializer may have created the same assignment
+                        # after our existence check but before this flush. Roll back the
+                        # failed insert and re-query to confirm the assignment exists.
+                        db.rollback()
+                        existing_assign = (
+                            db.query(UserOrganizationRole)
+                            .filter(
+                                UserOrganizationRole.user_id == admin_user.id,
+                                UserOrganizationRole.role_id == super_role.id,
+                                UserOrganizationRole.organization_id.is_(None),
+                            )
+                            .first()
+                        )
+                        if not existing_assign:
+                            # If the assignment still does not exist, propagate the error
+                            # so the outer handler can log and handle it as before.
+                            raise
+        except Exception:
+            # If this best-effort seeding fails, roll back just this part so the
+            # session is usable for the final commit, and log for diagnosis.
+            db.rollback()
+            logger.exception(
+                "Failed to ensure superadmin role and assignment during DB init; startup will continue."
+            )
 
         db.commit()
     finally:
