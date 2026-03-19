@@ -143,7 +143,24 @@ def init_db() -> None:
                 super_role.is_global = True
                 db.add(super_role)
 
-            if admin_was_first_user and admin_user:
+            # Decide whether we should grant the superadmin role to the admin user.
+            # Normally this is only when the admin was created as the first user in
+            # this init run, but we also want to repair a partial seed where the
+            # admin exists as the only user but lacks the superadmin assignment.
+            should_grant_superadmin = admin_was_first_user and admin_user is not None
+            if not should_grant_superadmin and admin_user:
+                try:
+                    user_count = db.query(User.id).count()
+                    if user_count == 1:
+                        # The admin is the only user in the system; treat this as a
+                        # "fresh DB" and ensure they get superadmin.
+                        should_grant_superadmin = True
+                except Exception:
+                    # If counting users fails (e.g., during migrations), skip this
+                    # best-effort repair and let startup continue.
+                    pass
+
+            if should_grant_superadmin:
                 # If the admin user isn't already globally assigned the superadmin role, assign it.
                 existing_assign = (
                     db.query(UserOrganizationRole)
