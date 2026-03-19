@@ -116,7 +116,6 @@ def init_db() -> None:
             db.add(admin)
             db.flush()
             admin_user = admin
-            created_admin = True
             # Only treat this admin as the "first user" if there were no users before.
             if had_existing_users is not None:
                 admin_was_first_user = not had_existing_users
