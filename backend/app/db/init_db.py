@@ -75,7 +75,7 @@ def init_db() -> None:
         admin_was_first_user = False
         try:
             # Determine whether any users exist before creating the admin user.
-            had_existing_users = db.query(User).count() > 0
+            had_existing_users = db.query(User.id).first() is not None
 
             # Look up the intended admin user explicitly by username instead of using an
             # arbitrary first() result, which has no deterministic ordering.
