@@ -3,6 +3,7 @@ import uuid
 import os
 import secrets
 from datetime import date
+import logging
 
 from sqlalchemy import exc as sa_exc
 
@@ -147,8 +148,10 @@ def init_db() -> None:
                     assign = UserOrganizationRole(user_id=admin_user.id, role_id=super_role.id, organization_id=None)
                     db.add(assign)
         except Exception:
-            # best-effort: don't block startup on seeding errors
-            pass
+            # best-effort: don't block startup on seeding errors, but do log them for diagnosis
+            logging.exception(
+                "Failed to ensure superadmin role and assignment during DB init; startup will continue."
+            )
 
         db.commit()
     finally:
