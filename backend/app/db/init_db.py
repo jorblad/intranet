@@ -65,9 +65,15 @@ def init_db() -> None:
 
     db = SessionLocal()
     skip_seeding = False
+    # Track whether we created a fresh admin user in this run
+    created_admin = False
+    # Determine the intended admin username (used both for lookup and creation)
+    admin_username = os.getenv("ADMIN_USERNAME", "admin")
     try:
         try:
-            admin_user = db.query(User).first()
+            # Look up the intended admin user explicitly by username instead of using an
+            # arbitrary first() result, which has no deterministic ordering.
+            admin_user = db.query(User).filter(User.username == admin_username).first()
         except Exception as e:
             # If the users table or new columns are missing (during migration),
             # rollback the session to clear any aborted transaction and skip all
@@ -88,7 +94,6 @@ def init_db() -> None:
         if not admin_user:
             # Create only the admin user. Username/password can be provided
             # via environment variables `ADMIN_USERNAME` and `ADMIN_PASSWORD`.
-            admin_username = os.getenv("ADMIN_USERNAME", "admin")
             admin_password = os.getenv("ADMIN_PASSWORD")
             if not admin_password:
                 admin_password = secrets.token_urlsafe(16)
@@ -107,8 +112,11 @@ def init_db() -> None:
             db.add(admin)
             db.flush()
             admin_user = admin
+            created_admin = True
 
-        # Ensure a global `superadmin` role exists and assign it to the admin user
+        # Ensure a global `superadmin` role exists and, on a fresh DB, assign it to
+        # the newly created admin user. Avoid granting superadmin to an arbitrary
+        # existing user on a non-empty database.
         try:
             super_role = db.query(Role).filter(Role.name == "superadmin").first()
             if not super_role:
@@ -116,19 +124,20 @@ def init_db() -> None:
                 db.add(super_role)
                 db.flush()
 
-            # If the admin user isn't already globally assigned the superadmin role, assign it
-            existing_assign = (
-                db.query(UserOrganizationRole)
-                .filter(
-                    UserOrganizationRole.user_id == admin_user.id,
-                    UserOrganizationRole.role_id == super_role.id,
-                    UserOrganizationRole.organization_id == None,
+            if created_admin and admin_user:
+                # If the admin user isn't already globally assigned the superadmin role, assign it
+                existing_assign = (
+                    db.query(UserOrganizationRole)
+                        .filter(
+                            UserOrganizationRole.user_id == admin_user.id,
+                            UserOrganizationRole.role_id == super_role.id,
+                            UserOrganizationRole.organization_id == None,
+                        )
+                        .first()
                 )
-                .first()
-            )
-            if not existing_assign:
-                assign = UserOrganizationRole(user_id=admin_user.id, role_id=super_role.id, organization_id=None)
-                db.add(assign)
+                if not existing_assign:
+                    assign = UserOrganizationRole(user_id=admin_user.id, role_id=super_role.id, organization_id=None)
+                    db.add(assign)
         except Exception:
             # best-effort: don't block startup on seeding errors
             pass
