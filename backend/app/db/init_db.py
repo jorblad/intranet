@@ -139,7 +139,7 @@ def init_db() -> None:
                         .filter(
                             UserOrganizationRole.user_id == admin_user.id,
                             UserOrganizationRole.role_id == super_role.id,
-                            UserOrganizationRole.organization_id == None,
+                            UserOrganizationRole.organization_id.is_(None),
                         )
                         .first()
                 )
