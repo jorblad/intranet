@@ -10,6 +10,8 @@ from sqlalchemy import exc as sa_exc
 from app.core.security import get_password_hash
 from app.db.base import Base
 from app.db.session import SessionLocal, engine
+
+logger = logging.getLogger(__name__)
 from sqlalchemy import inspect, text
 from app.models import (
     Schedule,
@@ -182,7 +184,7 @@ def init_db() -> None:
             # If this best-effort seeding fails, roll back just this part so the
             # session is usable for the final commit, and log for diagnosis.
             db.rollback()
-            logging.exception(
+            logger.exception(
                 "Failed to ensure superadmin role and assignment during DB init; startup will continue."
             )
 
