@@ -196,8 +196,35 @@ def init_db() -> None:
                         .first()
                 )
                 if not existing_assign:
-                    assign = UserOrganizationRole(user_id=admin_user.id, role_id=super_role.id, organization_id=None)
-                    db.add(assign)
+                    assign = UserOrganizationRole(
+                        user_id=admin_user.id,
+                        role_id=super_role.id,
+                        organization_id=None,
+                    )
+                    try:
+                        # Attempt to insert the global superadmin assignment. In a concurrent
+                        # init scenario another process may do the same, so we flush here
+                        # to surface any integrity errors immediately.
+                        db.add(assign)
+                        db.flush()
+                    except sa_exc.IntegrityError:
+                        # A concurrent initializer may have created the same assignment
+                        # after our existence check but before this flush. Roll back the
+                        # failed insert and re-query to confirm the assignment exists.
+                        db.rollback()
+                        existing_assign = (
+                            db.query(UserOrganizationRole)
+                            .filter(
+                                UserOrganizationRole.user_id == admin_user.id,
+                                UserOrganizationRole.role_id == super_role.id,
+                                UserOrganizationRole.organization_id.is_(None),
+                            )
+                            .first()
+                        )
+                        if not existing_assign:
+                            # If the assignment still does not exist, propagate the error
+                            # so the outer handler can log and handle it as before.
+                            raise
         except Exception:
             # If this best-effort seeding fails, roll back just this part so the
             # session is usable for the final commit, and log for diagnosis.
