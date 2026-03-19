@@ -136,8 +136,22 @@ def init_db() -> None:
                     description="Default superadmin role",
                     is_global=True,
                 )
-                db.add(super_role)
-                db.flush()
+                try:
+                    db.add(super_role)
+                    db.flush()
+                except sa_exc.IntegrityError:
+                    # Another concurrent initializer may have created the superadmin
+                    # role after our initial existence check but before this flush.
+                    # Roll back this failed insert and re-query the role so we can
+                    # continue with assignment logic using the existing row.
+                    db.rollback()
+                    super_role = (
+                        db.query(Role).filter(Role.name == "superadmin").first()
+                    )
+                    if not super_role:
+                        # If the role still does not exist, propagate the error so the
+                        # outer handler can log and handle it as before.
+                        raise
             elif not getattr(super_role, "is_global", False):
                 # Legacy databases might have a non-global 'superadmin' role.
                 # Ensure the existing role is marked as global so permission checks work correctly.
