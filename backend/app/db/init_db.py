@@ -132,9 +132,18 @@ def init_db() -> None:
         try:
             super_role = db.query(Role).filter(Role.name == "superadmin").first()
             if not super_role:
-                super_role = Role(name="superadmin", description="Default superadmin role", is_global=True)
+                super_role = Role(
+                    name="superadmin",
+                    description="Default superadmin role",
+                    is_global=True,
+                )
                 db.add(super_role)
                 db.flush()
+            elif not getattr(super_role, "is_global", False):
+                # Legacy databases might have a non-global 'superadmin' role.
+                # Ensure the existing role is marked as global so permission checks work correctly.
+                super_role.is_global = True
+                db.add(super_role)
 
             if admin_was_first_user and admin_user:
                 # If the admin user isn't already globally assigned the superadmin role, assign it.
