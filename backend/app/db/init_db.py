@@ -123,6 +123,9 @@ def init_db() -> None:
             if had_existing_users is not None:
                 admin_was_first_user = not had_existing_users
 
+        # Commit core seeding (e.g., admin user creation) before best-effort role seeding
+        db.commit()
+
         # Ensure a global `superadmin` role exists and, on a fresh DB, assign it to
         # the newly created admin user. Avoid granting superadmin to an arbitrary
         # existing user on a non-empty database.
@@ -148,7 +151,9 @@ def init_db() -> None:
                     assign = UserOrganizationRole(user_id=admin_user.id, role_id=super_role.id, organization_id=None)
                     db.add(assign)
         except Exception:
-            # best-effort: don't block startup on seeding errors, but do log them for diagnosis
+            # If this best-effort seeding fails, roll back just this part so the
+            # session is usable for the final commit, and log for diagnosis.
+            db.rollback()
             logging.exception(
                 "Failed to ensure superadmin role and assignment during DB init; startup will continue."
             )
