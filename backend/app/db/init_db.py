@@ -70,7 +70,12 @@ def init_db() -> None:
     # Determine the intended admin username (used both for lookup and creation)
     admin_username = os.getenv("ADMIN_USERNAME", "admin")
     try:
+        had_existing_users = None
+        admin_was_first_user = False
         try:
+            # Determine whether any users exist before creating the admin user.
+            had_existing_users = db.query(User).count() > 0
+
             # Look up the intended admin user explicitly by username instead of using an
             # arbitrary first() result, which has no deterministic ordering.
             admin_user = db.query(User).filter(User.username == admin_username).first()
@@ -113,6 +118,9 @@ def init_db() -> None:
             db.flush()
             admin_user = admin
             created_admin = True
+            # Only treat this admin as the "first user" if there were no users before.
+            if had_existing_users is not None:
+                admin_was_first_user = not had_existing_users
 
         # Ensure a global `superadmin` role exists and, on a fresh DB, assign it to
         # the newly created admin user. Avoid granting superadmin to an arbitrary
@@ -124,8 +132,8 @@ def init_db() -> None:
                 db.add(super_role)
                 db.flush()
 
-            if created_admin and admin_user:
-                # If the admin user isn't already globally assigned the superadmin role, assign it
+            if admin_was_first_user and admin_user:
+                # If the admin user isn't already globally assigned the superadmin role, assign it.
                 existing_assign = (
                     db.query(UserOrganizationRole)
                         .filter(
