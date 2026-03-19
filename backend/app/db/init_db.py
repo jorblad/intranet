@@ -2,7 +2,6 @@ import time
 import uuid
 import os
 import secrets
-from datetime import date
 import logging
 
 from sqlalchemy import exc as sa_exc
