@@ -66,8 +66,6 @@ def init_db() -> None:
 
     db = SessionLocal()
     skip_seeding = False
-    # Track whether we created a fresh admin user in this run
-    created_admin = False
     # Determine the intended admin username (used both for lookup and creation)
     admin_username = os.getenv("ADMIN_USERNAME", "admin")
     try:
