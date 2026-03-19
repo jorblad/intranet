@@ -149,14 +149,19 @@ def init_db() -> None:
             should_grant_superadmin = admin_was_first_user and admin_user is not None
             if not should_grant_superadmin and admin_user:
                 try:
-                    user_count = db.query(User.id).count()
-                    if user_count == 1:
+                    # Check if there exists any user other than the admin; avoid a full COUNT(*).
+                    other_user = (
+                        db.query(User.id)
+                        .filter(User.id != admin_user.id)
+                        .first()
+                    )
+                    if other_user is None:
                         # The admin is the only user in the system; treat this as a
                         # "fresh DB" and ensure they get superadmin.
                         should_grant_superadmin = True
                 except Exception:
-                    # If counting users fails (e.g., during migrations), skip this
-                    # best-effort repair and let startup continue.
+                    # If checking for additional users fails (e.g., during migrations),
+                    # skip this best-effort repair and let startup continue.
                     pass
 
             if should_grant_superadmin:
