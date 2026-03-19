@@ -152,6 +152,11 @@ def init_db() -> None:
                         # If the role still does not exist, propagate the error so the
                         # outer handler can log and handle it as before.
                         raise
+                    elif not getattr(super_role, "is_global", False):
+                        # A concurrent initializer may have created a non-global 'superadmin' role.
+                        # Ensure the existing role is marked as global so permission checks work correctly.
+                        super_role.is_global = True
+                        db.add(super_role)
             elif not getattr(super_role, "is_global", False):
                 # Legacy databases might have a non-global 'superadmin' role.
                 # Ensure the existing role is marked as global so permission checks work correctly.
