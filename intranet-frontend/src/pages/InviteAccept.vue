@@ -125,44 +125,5 @@ async function submit() {
 }
 </script>
 
-<i18n>
-{
-  "en-US": {
-    "inviteAccept": {
-      "setPasswordTitle": "Set a password",
-      "loadingInvite": "Loading invite...",
-      "invalidOrExpiredToken": "Invalid or expired invite token",
-      "username": "Username",
-      "displayName": "Display name",
-      "password": "Password",
-      "confirmPassword": "Confirm password",
-      "missingInviteToken": "Missing invite token",
-      "pleaseProvidePassword": "Please provide a password",
-      "passwordsDoNotMatch": "Passwords do not match",
-      "missingOrInvalidInviteToken": "Missing or invalid invite token",
-      "passwordSetSuccess": "Password set — you may now log in",
-      "failedToAcceptInvite": "Failed to accept invite"
-    }
-  },
-  "sv-SE": {
-    "inviteAccept": {
-      "setPasswordTitle": "Ange lösenord",
-      "loadingInvite": "Läser in inbjudan...",
-      "invalidOrExpiredToken": "Ogiltig eller utgången inbjudningstoken",
-      "username": "Användarnamn",
-      "displayName": "Visningsnamn",
-      "password": "Lösenord",
-      "confirmPassword": "Bekräfta lösenord",
-      "missingInviteToken": "Inbjudningstoken saknas",
-      "pleaseProvidePassword": "Ange ett lösenord",
-      "passwordsDoNotMatch": "Lösenorden stämmer inte överens",
-      "missingOrInvalidInviteToken": "Ogiltig eller saknad inbjudningstoken",
-      "passwordSetSuccess": "Lösenordet är sparat – du kan nu logga in",
-      "failedToAcceptInvite": "Kunde inte acceptera inbjudan"
-    }
-  }
-}
-</i18n>
-
 <style scoped>
 </style>
