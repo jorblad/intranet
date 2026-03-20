@@ -147,6 +147,22 @@ export default {
     forgot_help: 'Enter your username or email to receive a reset link.',
     reset_sent_notice: 'If an account exists we will send a password reset email.'
   },
+
+  inviteAccept: {
+    setPasswordTitle: 'Set a password',
+    loadingInvite: 'Loading invite...',
+    invalidOrExpiredToken: 'Invalid or expired invite token',
+    username: 'Username',
+    displayName: 'Display name',
+    password: 'Password',
+    confirmPassword: 'Confirm password',
+    missingInviteToken: 'Missing invite token',
+    pleaseProvidePassword: 'Please provide a password',
+    passwordsDoNotMatch: 'Passwords do not match',
+    missingOrInvalidInviteToken: 'Missing or invalid invite token',
+    passwordSetSuccess: 'Password set — you may now log in',
+    failedToAcceptInvite: 'Failed to accept invite'
+  },
   error: {
     '404_message': 'Oops. Nothing here...',
     go_home: 'Go home'

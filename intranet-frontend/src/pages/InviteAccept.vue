@@ -125,30 +125,5 @@ async function submit() {
 }
 </script>
 
-<i18n>
-{
-  "en-US": {
-    "inviteAccept": {
-      "missingInviteToken": "Missing invite token",
-      "pleaseProvidePassword": "Please provide a password",
-      "passwordsDoNotMatch": "Passwords do not match",
-      "missingOrInvalidInviteToken": "Missing or invalid invite token",
-      "passwordSetSuccess": "Password set — you may now log in",
-      "failedToAcceptInvite": "Failed to accept invite"
-    }
-  },
-  "sv-SE": {
-    "inviteAccept": {
-      "missingInviteToken": "Inbjudningstoken saknas",
-      "pleaseProvidePassword": "Ange ett lösenord",
-      "passwordsDoNotMatch": "Lösenorden stämmer inte överens",
-      "missingOrInvalidInviteToken": "Ogiltig eller saknad inbjudningstoken",
-      "passwordSetSuccess": "Lösenordet är sparat – du kan nu logga in",
-      "failedToAcceptInvite": "Kunde inte acceptera inbjudan"
-    }
-  }
-}
-</i18n>
-
 <style scoped>
 </style>
