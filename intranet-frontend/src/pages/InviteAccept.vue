@@ -129,6 +129,13 @@ async function submit() {
 {
   "en-US": {
     "inviteAccept": {
+      "setPasswordTitle": "Set a password",
+      "loadingInvite": "Loading invite...",
+      "invalidOrExpiredToken": "Invalid or expired invite token",
+      "username": "Username",
+      "displayName": "Display name",
+      "password": "Password",
+      "confirmPassword": "Confirm password",
       "missingInviteToken": "Missing invite token",
       "pleaseProvidePassword": "Please provide a password",
       "passwordsDoNotMatch": "Passwords do not match",
@@ -139,6 +146,13 @@ async function submit() {
   },
   "sv-SE": {
     "inviteAccept": {
+      "setPasswordTitle": "Ange lösenord",
+      "loadingInvite": "Läser in inbjudan...",
+      "invalidOrExpiredToken": "Ogiltig eller utgången inbjudningstoken",
+      "username": "Användarnamn",
+      "displayName": "Visningsnamn",
+      "password": "Lösenord",
+      "confirmPassword": "Bekräfta lösenord",
       "missingInviteToken": "Inbjudningstoken saknas",
       "pleaseProvidePassword": "Ange ett lösenord",
       "passwordsDoNotMatch": "Lösenorden stämmer inte överens",

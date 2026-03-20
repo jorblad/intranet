@@ -151,6 +151,22 @@ export default {
     forgot_help: 'Ange ditt användarnamn eller e-post för att få en återställningslänk.',
     reset_sent_notice: 'Om ett konto finns så skickar vi ett återställningsmail.'
   },
+
+  inviteAccept: {
+    setPasswordTitle: 'Ange lösenord',
+    loadingInvite: 'Läser in inbjudan...',
+    invalidOrExpiredToken: 'Ogiltig eller utgången inbjudningstoken',
+    username: 'Användarnamn',
+    displayName: 'Visningsnamn',
+    password: 'Lösenord',
+    confirmPassword: 'Bekräfta lösenord',
+    missingInviteToken: 'Inbjudningstoken saknas',
+    pleaseProvidePassword: 'Ange ett lösenord',
+    passwordsDoNotMatch: 'Lösenorden stämmer inte överens',
+    missingOrInvalidInviteToken: 'Ogiltig eller saknad inbjudningstoken',
+    passwordSetSuccess: 'Lösenordet är sparat – du kan nu logga in',
+    failedToAcceptInvite: 'Kunde inte acceptera inbjudan'
+  },
   error: {
     '404_message': 'Hoppsan. Ingenting här...',
     go_home: 'Gå hem'
