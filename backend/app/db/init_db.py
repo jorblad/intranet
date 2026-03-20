@@ -259,9 +259,24 @@ def init_db() -> None:
                             db.add(Role(name=name, description=desc, is_global=is_global))
                     db.flush()
             except sa_exc.IntegrityError:
-                # Another concurrent initializer won the race — the savepoint has
-                # been rolled back; continue without failing init.
-                pass
+                # Another concurrent initializer may still be racing. Log the failure of
+                # this retry, then verify that the expected roles exist before continuing.
+                logger.exception(
+                    "IntegrityError while retrying to ensure default roles; "
+                    "verifying role existence before continuing DB init."
+                )
+                missing_roles = []
+                for name, desc, is_global in default_roles:
+                    existing_role = db.query(Role).filter(Role.name == name).first()
+                    if not existing_role:
+                        missing_roles.append(name)
+                if missing_roles:
+                    logger.error(
+                        "Default roles could not be fully ensured during DB init; "
+                        "missing roles: %s. Startup will continue with a potentially "
+                        "partially-seeded state.",
+                        ", ".join(missing_roles),
+                    )
         except Exception:
             db.rollback()
             logger.exception("Failed to ensure default roles during DB init; startup will continue.")
