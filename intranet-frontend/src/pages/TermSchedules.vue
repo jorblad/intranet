@@ -305,6 +305,8 @@
                   stack-label
                     :label="$t('termschedules.responsible_label')"
                   counter
+                  menu-anchor="top left"
+                  menu-self="bottom left"
                 />
               </q-popup-edit>
             </q-td>
@@ -334,6 +336,8 @@
                   stack-label
                   :label="$t('termschedules.devotional_label')"
                   counter
+                  menu-anchor="top left"
+                  menu-self="bottom left"
                 />
               </q-popup-edit>
             </q-td>
@@ -363,6 +367,8 @@
                   stack-label
                   :label="$t('termschedules.cant_come_label')"
                   counter
+                  menu-anchor="top left"
+                  menu-self="bottom left"
                 />
               </q-popup-edit>
             </q-td>
@@ -491,6 +497,8 @@
             use-chips
             stack-label
             :label="$t('termschedules.responsible_label')"
+            menu-anchor="top left"
+            menu-self="bottom left"
           />
           <q-select
             filled
@@ -501,6 +509,8 @@
             use-chips
             stack-label
             :label="$t('termschedules.devotional_label')"
+            menu-anchor="top left"
+            menu-self="bottom left"
           />
           <q-select
             filled
@@ -511,6 +521,8 @@
             use-chips
             stack-label
             :label="$t('termschedules.cant_come_label')"
+            menu-anchor="top left"
+            menu-self="bottom left"
           />
           <markdown-editor v-model="editedRow.notes" />
           <q-toggle
@@ -604,7 +616,7 @@
                   <q-checkbox v-model="bulkApply.responsible" :label="$t('termschedules.responsible_label')" />
                 </div>
                 <div class="col-12 col-sm-8">
-                  <q-select v-model="bulkForm.responsible" :options="formattedUsers" multiple use-chips :disabled="!bulkApply.responsible" :label="$t('termschedules.responsible_label')" />
+                  <q-select v-model="bulkForm.responsible" :options="formattedUsers" multiple use-chips :disabled="!bulkApply.responsible" :label="$t('termschedules.responsible_label')" menu-anchor="top left" menu-self="bottom left" />
                 </div>
               </div>
             </div>
@@ -615,7 +627,7 @@
                   <q-checkbox v-model="bulkApply.devotional" :label="$t('termschedules.devotional_label')" />
                 </div>
                 <div class="col-12 col-sm-8">
-                  <q-select v-model="bulkForm.devotional" :options="formattedUsers" multiple use-chips :disabled="!bulkApply.devotional" :label="$t('termschedules.devotional_label')" />
+                  <q-select v-model="bulkForm.devotional" :options="formattedUsers" multiple use-chips :disabled="!bulkApply.devotional" :label="$t('termschedules.devotional_label')" menu-anchor="top left" menu-self="bottom left" />
                 </div>
               </div>
             </div>
@@ -626,7 +638,7 @@
                   <q-checkbox v-model="bulkApply.cant_come" :label="$t('termschedules.cant_come_label')" />
                 </div>
                 <div class="col-12 col-sm-8">
-                  <q-select v-model="bulkForm.cant_come" :options="formattedUsers" multiple use-chips :disabled="!bulkApply.cant_come" :label="$t('termschedules.cant_come_label')" />
+                  <q-select v-model="bulkForm.cant_come" :options="formattedUsers" multiple use-chips :disabled="!bulkApply.cant_come" :label="$t('termschedules.cant_come_label')" menu-anchor="top left" menu-self="bottom left" />
                 </div>
               </div>
             </div>
@@ -803,6 +815,17 @@
   border-radius: 0
   box-shadow: none
   background: transparent
+
+/* Ensure select dropdowns opened inside inline editors/dialogs appear above
+  the editor action buttons on desktop. This prevents the options list from
+  overlapping or being covered by the Save/Cancel buttons. */
+.q-popup-edit .q-menu,
+.q-popup-edit .q-menu__content,
+.q-popup-edit .q-select__popup,
+.q-popup-edit .q-select__dropdown,
+.q-dialog .q-popup-edit .q-menu,
+.q-dialog .q-popup-edit .q-menu__content
+  z-index: 2050 !important
 
 .mobile-card q-td
   display: block
