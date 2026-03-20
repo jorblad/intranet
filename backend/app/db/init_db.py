@@ -233,6 +233,26 @@ def init_db() -> None:
                 "Failed to ensure superadmin role and assignment during DB init; startup will continue."
             )
 
+        # Ensure standard roles exist (organization-level roles like org_admin and member)
+        try:
+            default_roles = [
+                ("org_admin", "Organization administrator", False),
+                ("member", "Default organization member", False),
+            ]
+            for name, desc, is_global in default_roles:
+                r = db.query(Role).filter(Role.name == name).first()
+                if not r:
+                    r = Role(name=name, description=desc, is_global=is_global)
+                    db.add(r)
+            try:
+                db.flush()
+            except sa_exc.IntegrityError:
+                # Concurrent init may have inserted roles — rollback and continue
+                db.rollback()
+        except Exception:
+            db.rollback()
+            logger.exception("Failed to ensure default roles during DB init; startup will continue.")
+
         db.commit()
     finally:
         db.close()
