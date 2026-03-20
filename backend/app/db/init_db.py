@@ -234,21 +234,34 @@ def init_db() -> None:
             )
 
         # Ensure standard roles exist (organization-level roles like org_admin and member)
+        default_roles = [
+            ("org_admin", "Organization administrator", False),
+            ("member", "Default organization member", False),
+        ]
         try:
-            default_roles = [
-                ("org_admin", "Organization administrator", False),
-                ("member", "Default organization member", False),
-            ]
-            for name, desc, is_global in default_roles:
-                r = db.query(Role).filter(Role.name == name).first()
-                if not r:
-                    r = Role(name=name, description=desc, is_global=is_global)
-                    db.add(r)
-            try:
+            # Use a nested transaction so failures here don't roll back earlier
+            # uncommitted work in the outer transaction (for example, superadmin seeding).
+            with db.begin_nested():
+                for name, desc, is_global in default_roles:
+                    r = db.query(Role).filter(Role.name == name).first()
+                    if not r:
+                        r = Role(name=name, description=desc, is_global=is_global)
+                        db.add(r)
                 db.flush()
+        except sa_exc.IntegrityError:
+            # Concurrent init may have inserted roles — the nested transaction has
+            # been rolled back; re-check each default role and insert any still missing.
+            try:
+                with db.begin_nested():
+                    for name, desc, is_global in default_roles:
+                        existing_role = db.query(Role).filter(Role.name == name).first()
+                        if not existing_role:
+                            db.add(Role(name=name, description=desc, is_global=is_global))
+                    db.flush()
             except sa_exc.IntegrityError:
-                # Concurrent init may have inserted roles — rollback and continue
-                db.rollback()
+                # Another concurrent initializer won the race — the savepoint has
+                # been rolled back; continue without failing init.
+                pass
         except Exception:
             db.rollback()
             logger.exception("Failed to ensure default roles during DB init; startup will continue.")
