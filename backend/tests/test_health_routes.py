@@ -1,19 +1,20 @@
 """
 Tests for the /health and /metrics endpoints.
 
-These tests use an in-memory SQLite database so no external services are
-required.  Frontend URL and Valkey environment variables are intentionally
-left unset, so those checks report "not_configured".
+These tests use an in-memory SQLite database and explicitly clear all
+VALKEY_* / FRONTEND_* environment variables so that optional dependency
+checks always report "not_configured", making the suite deterministic
+regardless of the CI environment.
 """
 import pytest
+from unittest.mock import patch
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.main import app
 from app.db.base import Base
-from app.db.session import get_db
+import app.api.routes.health as health_module
 
 
 # ---------------------------------------------------------------------------
@@ -21,33 +22,35 @@ from app.db.session import get_db
 # ---------------------------------------------------------------------------
 
 
+@pytest.fixture(autouse=True)
+def clear_optional_env_vars(monkeypatch):
+    """Remove all optional-service env vars so health checks are deterministic."""
+    for var in (
+        "VALKEY_URL",
+        "VALKEY_HOST",
+        "VALKEY_PORT",
+        "FRONTEND_URL",
+        "FRONTEND_HEALTH_URL",
+    ):
+        monkeypatch.delenv(var, raising=False)
+
+
 @pytest.fixture(scope="function")
-def test_db():
+def sqlite_engine():
     engine = create_engine(
         "sqlite:///:memory:",
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
-    TestingSessionLocal = sessionmaker(
-        bind=engine, autoflush=False, autocommit=False, expire_on_commit=False
-    )
     Base.metadata.create_all(bind=engine)
-
-    def _get_db():
-        db = TestingSessionLocal()
-        try:
-            yield db
-        finally:
-            db.close()
-
-    app.dependency_overrides[get_db] = _get_db
-    yield TestingSessionLocal
-    app.dependency_overrides.pop(get_db, None)
+    return engine
 
 
 @pytest.fixture
-def client(test_db):
-    return TestClient(app)
+def client(sqlite_engine):
+    """TestClient that patches health_module.engine with the in-memory SQLite engine."""
+    with patch.object(health_module, "engine", sqlite_engine):
+        yield TestClient(app)
 
 
 # ---------------------------------------------------------------------------
@@ -86,22 +89,16 @@ def test_health_response_structure(client):
     assert "checks" in res.json()
 
 
-def test_health_frontend_not_configured(client, monkeypatch):
+def test_health_frontend_not_configured(client):
     """When FRONTEND_HEALTH_URL and FRONTEND_URL are unset, frontend check is not_configured."""
-    monkeypatch.delenv("FRONTEND_HEALTH_URL", raising=False)
-    monkeypatch.delenv("FRONTEND_URL", raising=False)
-
     res = client.get("/health")
     assert res.status_code == 200
     frontend_check = res.json()["checks"].get("frontend", {})
     assert frontend_check.get("ok") is None
 
 
-def test_health_valkey_not_configured(client, monkeypatch):
+def test_health_valkey_not_configured(client):
     """When VALKEY_URL and VALKEY_HOST are unset, valkey check is not_configured."""
-    monkeypatch.delenv("VALKEY_URL", raising=False)
-    monkeypatch.delenv("VALKEY_HOST", raising=False)
-
     res = client.get("/health")
     assert res.status_code == 200
     valkey_check = res.json()["checks"].get("valkey", {})
@@ -132,3 +129,4 @@ def test_metrics_does_not_include_health_gauges(client):
     assert "intranet_database_up" not in body
     assert "intranet_frontend_up" not in body
     assert "intranet_valkey_up" not in body
+
