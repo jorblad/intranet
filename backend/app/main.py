@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from app.api.routes import auth, schedules, taxonomy, users, ws, rbac, calendars, admin_messages, settings
+from app.api.routes import auth, schedules, taxonomy, users, ws, rbac, calendars, admin_messages, settings, health
 from app.core.config import (
     ALLOWED_ORIGINS,
     ALLOWED_ORIGIN_REGEX,
@@ -36,6 +36,7 @@ if ALLOWED_ORIGIN_REGEX:
 app.add_middleware(CORSMiddleware, **cors_kwargs)
 
 app.include_router(auth.router)
+app.include_router(health.router)
 app.include_router(users.router, prefix="/api")
 app.include_router(taxonomy.router, prefix="/api")
 app.include_router(schedules.router, prefix="/api")
@@ -55,5 +56,5 @@ else:
     def root():
         return {
             "status": "ok",
-            "message": "Frontend build not found. Build the Quasar app to enable SPA serving.",
+            "message": "Frontend build not found. Serve the frontend from separate server.",
         }
