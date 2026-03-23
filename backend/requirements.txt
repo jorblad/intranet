@@ -9,4 +9,4 @@ pydantic
 psycopg2-binary
 valkey[libvalkey]
 requests
-prometheus_client
+prometheus-client
