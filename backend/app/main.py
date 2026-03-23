@@ -56,5 +56,5 @@ else:
     def root():
         return {
             "status": "ok",
-            "message": "Frontend build not found. Serve the frontend from separate server.",
+            "message": "Frontend build not found. Serve the frontend from a separate server.",
         }
