@@ -226,7 +226,7 @@
 </style>
 
 <script>
-import { defineComponent, ref, computed, watch, onUnmounted } from 'vue'
+import { defineComponent, ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router' // Import the router and route instances
 import { useQuasar } from 'quasar'
 import { useAuth, fetchCurrentUser, fetchOrganizations, setSelectedOrganization } from '../services/auth.js'
@@ -366,8 +366,6 @@ export default defineComponent({
     _pollInterval = setInterval(updateSync, 2000)
     updateSync()
 
-    onUnmounted(() => { if (_pollInterval) clearInterval(_pollInterval); try { if (typeof _reloadInterval !== 'undefined' && _reloadInterval) clearInterval(_reloadInterval) } catch (e) {} })
-
     // Debug panel state
     const pendingList = ref([])
     const pendingCount = ref(0)
@@ -443,6 +441,35 @@ export default defineComponent({
       router.push('/login')
     }
 
+    // Listen for session-expired events dispatched by the HTTP interceptor or
+    // the WebSocket handler when the server signals that the token has expired.
+    // Using a router push (SPA navigation) instead of a full-page redirect
+    // preserves the IndexedDB pending queue and any other in-memory state.
+    let _sessionExpiredHandled = false
+    const _handleSessionExpired = () => {
+      if (_sessionExpiredHandled) return
+      _sessionExpiredHandled = true
+      try {
+        localStorage.removeItem('access_token')
+        localStorage.removeItem('refresh_token')
+      } catch (e) {}
+      $q.notify({ type: 'warning', message: t('nav.session_expired') })
+      router.push('/login')
+    }
+
+    onMounted(() => {
+      if (typeof window !== 'undefined') {
+        window.addEventListener('session-expired', _handleSessionExpired)
+      }
+    })
+
+    onUnmounted(() => {
+      if (_pollInterval) clearInterval(_pollInterval)
+      try { if (typeof _reloadInterval !== 'undefined' && _reloadInterval) clearInterval(_reloadInterval) } catch (e) {}
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('session-expired', _handleSessionExpired)
+      }
+    })
 
     return {
       leftDrawerOpen,

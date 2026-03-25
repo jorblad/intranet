@@ -13,6 +13,14 @@ function addSubscriber(cb) {
   subscribers.push(cb)
 }
 
+function _notifySessionExpired() {
+  try {
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('session-expired'))
+    }
+  } catch (e) {}
+}
+
 export function setupInterceptors({ refreshEndpoint = '/oauth/token' } = {}) {
   // request: attach access token if present
   axios.interceptors.request.use((config) => {
@@ -36,7 +44,7 @@ export function setupInterceptors({ refreshEndpoint = '/oauth/token' } = {}) {
         originalRequest._retry = true
         const refreshToken = localStorage.getItem('refresh_token')
         if (!refreshToken) {
-          // no refresh available: clear any tokens and redirect to login
+          // no refresh available: clear any tokens and notify session expired
           try {
             localStorage.removeItem('access_token')
             localStorage.removeItem('refresh_token')
@@ -47,7 +55,7 @@ export function setupInterceptors({ refreshEndpoint = '/oauth/token' } = {}) {
               const hash = String(location.hash || '')
               const pathname = String(location.pathname || '')
               if (!hash.includes('/invite/accept') && !pathname.includes('/invite/accept')) {
-                window.location.href = '/login'
+                _notifySessionExpired()
               }
             } catch (e) {}
           }
@@ -69,7 +77,7 @@ export function setupInterceptors({ refreshEndpoint = '/oauth/token' } = {}) {
             onRefreshed(data.access_token)
             return data
           }).catch(err => {
-            // refresh failed: clear tokens and redirect to login
+            // refresh failed: clear tokens and notify session expired
             try {
               localStorage.removeItem('access_token')
               localStorage.removeItem('refresh_token')
@@ -80,7 +88,7 @@ export function setupInterceptors({ refreshEndpoint = '/oauth/token' } = {}) {
                 const hash = String(location.hash || '')
                 const pathname = String(location.pathname || '')
                 if (!hash.includes('/invite/accept') && !pathname.includes('/invite/accept')) {
-                  window.location.href = '/login'
+                  _notifySessionExpired()
                 }
               } catch (e) {}
             }

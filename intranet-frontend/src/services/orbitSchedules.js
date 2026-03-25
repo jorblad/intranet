@@ -537,6 +537,16 @@ async function connectWebsocket() {
         try { console.debug('Orbit WS transform received', t && (t.op || t)) } catch (e) {}
         await applyRemoteTransform(t)
       }
+      if (msg.type === 'session_expired') {
+        // Server detected that the access token for this connection has expired.
+        // Notify the rest of the application so it can show a message and redirect
+        // to the login page without losing any pending work stored in IndexedDB.
+        try {
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('session-expired'))
+          }
+        } catch (e) {}
+      }
     } catch (e) { console.warn('Orbit WS message handling error', e) }
   }
 

@@ -34,3 +34,25 @@ def decode_access_token(token: str) -> Optional[str]:
         return payload.get("sub")
     except JWTError:
         return None
+
+
+def decode_access_token_exp(token: str) -> Optional[float]:
+    """Return the token's expiry as a UTC Unix timestamp, without verifying expiry.
+
+    Returns None if the token cannot be decoded or has no ``exp`` claim.
+    This is intentionally lenient about expiry so callers can read the
+    expiration time of an already-expired token.
+    """
+    try:
+        payload = jwt.decode(
+            token,
+            SECRET_KEY,
+            algorithms=[ALGORITHM],
+            options={"verify_exp": False},
+        )
+        exp = payload.get("exp")
+        if exp is None:
+            return None
+        return float(exp)
+    except JWTError:
+        return None
