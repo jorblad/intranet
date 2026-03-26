@@ -64,7 +64,7 @@ PYTHONPATH=. DATABASE_URL=sqlite:///./test_app.db SECRET_KEY=test-secret pytest 
 - **State / data sync**: Orbit.js (`@orbit/memory`, `@orbit/indexeddb`) with a custom WebSocket adapter
 - **API calls**: Axios-based service modules in `intranet-frontend/src/services/`. The API base URL defaults to `/api` but can be overridden via `window.__API_PROXY_TARGET__` at runtime
 - **i18n**: `vue-i18n`; message bundles are in `intranet-frontend/src/i18n/`; both full locale keys (`en-US`, `sv-SE`) and short keys (`en`, `sv`) are exported
-- **Markdown**: use `src/utils/markdown.js` (`sanitizeUrl`, `renderToHtml`) for any markdown rendering; do **not** bypass DOMPurify sanitization
+- **Markdown**: use `intranet-frontend/src/utils/markdown.js` (`sanitizeUrl`, `renderToHtml`) for any markdown rendering; do **not** bypass DOMPurify sanitization
 - **Linting**: ESLint with `plugin:vue/vue3-essential` + `prettier`; run `npm run lint` from `intranet-frontend/`
 - **Unit tests**: Vitest; run `npm test` from `intranet-frontend/`
 - **Build**: `npm run build` (Quasar build → `dist/spa`)
