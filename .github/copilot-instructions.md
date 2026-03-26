@@ -25,7 +25,7 @@ Start the full dev stack with:
 docker compose -f docker-compose.dev.yml up --build
 ```
 
-- Backend: http://localhost:8000
+- Backend: http://localhost:8200
 - Frontend: http://localhost:9000
 - Admin login: username `admin` (configurable via `ADMIN_USERNAME`), password from `ADMIN_PASSWORD`; if unset, a random temporary password is generated on first run and printed to the backend logs.
 
