@@ -53,6 +53,9 @@ def decode_access_token_exp(token: str) -> Optional[float]:
         exp = payload.get("exp")
         if exp is None:
             return None
-        return float(exp)
+        try:
+            return float(exp)
+        except (TypeError, ValueError):
+            return None
     except JWTError:
         return None

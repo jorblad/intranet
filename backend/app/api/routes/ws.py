@@ -51,21 +51,29 @@ async def _start_heartbeat(loop_interval: int = 10):
                     pass
 
                 # Check for connections whose access token has expired and notify them.
-                now = time.time()
-                expired_conns = [
-                    ws for ws, meta in list(connections.items())
-                    if meta.get("exp") is not None and now >= meta["exp"]
-                ]
-                for ws in expired_conns:
-                    try:
-                        await ws.send_text(json.dumps({"type": "session_expired"}))
-                    except Exception:
-                        pass
-                    try:
-                        await ws.close(code=1008)
-                    except Exception:
-                        pass
-                    connections.pop(ws, None)
+                try:
+                    now = time.time()
+                    expired_conns = [
+                        ws for ws, meta in list(connections.items())
+                        if isinstance(meta, dict)
+                        and meta.get("exp") is not None
+                        and now >= meta["exp"]
+                    ]
+                    for ws in expired_conns:
+                        try:
+                            await ws.send_text(json.dumps({"type": "session_expired"}))
+                        except Exception:
+                            # Ignore send errors; connection may already be broken.
+                            pass
+                        try:
+                            await ws.close(code=1008)
+                        except Exception:
+                            # Ignore close errors; connection cleanup continues.
+                            pass
+                        connections.pop(ws, None)
+                except Exception:
+                    # Protect heartbeat loop from unexpected data in `connections`.
+                    logger.exception("Error while scanning/evicting expired WebSocket connections")
 
                 await asyncio.sleep(loop_interval)
         except asyncio.CancelledError:
