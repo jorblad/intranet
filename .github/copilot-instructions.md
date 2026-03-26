@@ -27,7 +27,7 @@ docker compose -f docker-compose.dev.yml up --build
 
 - Backend: http://localhost:8000
 - Frontend: http://localhost:9000
-- Default credentials: `admin` / `password`
+- Admin login: username `admin` (configurable via `ADMIN_USERNAME`), password from `ADMIN_PASSWORD`; if unset, a random temporary password is generated on first run and printed to the backend logs.
 
 Run Alembic migrations inside the backend container when needed:
 
