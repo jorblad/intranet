@@ -46,7 +46,7 @@ docker compose -f docker-compose.dev.yml exec backend alembic upgrade heads
 - **Logging**: define `logger = logging.getLogger(__name__)` at module level; never use the root `logging` module directly
 - **DB seeding**: use `Session.begin_nested()` savepoints for default-data inserts to avoid rolling back the outer transaction on `IntegrityError`
 - **RBAC**: `is_superadmin(user)` returns `True` only when the user has a role named `superadmin` with `role.is_global == True`
-- **Tests**: use `pytest` + `httpx`; run with `pytest -q` from `backend/`. Tests use SQLite (`DATABASE_URL=sqlite:///./backend/test_app.db`)
+- **Tests**: use `pytest` + `httpx`; run with `pytest -q` from `backend/`. Tests use SQLite (in CI: `DATABASE_URL=sqlite:///./backend/test_app.db`; when running locally from `backend/`, typically `DATABASE_URL=sqlite:///./test_app.db` as shown below)
 - **Linting/formatting**: no dedicated Python linter is configured; keep style consistent with the surrounding code
 
 ### Running backend tests
