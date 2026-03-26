@@ -88,4 +88,4 @@ npm run build
 
 - `docker-compose.yml` references pre-built images; update image tags there for production deploys
 - The production Nginx image uses `docker-entrypoint.sh` to generate `runtime-config.js` (sets `window.__API_PROXY_TARGET__`) before serving the SPA
-- Key environment variables: `ALLOWED_ORIGINS`, `FRONTEND_URL`, `ALLOWED_ORIGIN_REGEX`, `CORS_ALLOW_CREDENTIALS`, `STATIC_DIR`, `DATABASE_URL`, `SECRET_KEY`, `VALKEY_HOST`, `VALKEY_PORT`
+- Key deployment environment variables: `ALLOWED_ORIGINS`, `FRONTEND_URL`, `ALLOWED_ORIGIN_REGEX`, `CORS_ALLOW_CREDENTIALS`, `STATIC_DIR`, `DATABASE_URL`, `SECRET_KEY`, `VALKEY_HOST`, `VALKEY_PORT`, `BACKEND_URL`, `ADMIN_USERNAME`, `ADMIN_PASSWORD`
