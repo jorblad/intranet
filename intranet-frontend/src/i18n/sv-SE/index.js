@@ -12,6 +12,7 @@ export default {
     navigation: 'Navigation',
     global: 'Global',
     logged_out: 'Utloggad',
+    session_expired: 'Din session har gått ut. Logga in igen.',
     logout: 'Logga ut',
     admin: 'Admin',
     users: 'Användare',

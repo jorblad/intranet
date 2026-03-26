@@ -83,6 +83,7 @@ export default {
     activity_caption: 'Term activities are listed here',
     global: 'Global',
     logged_out: 'Logged out',
+    session_expired: 'Your session has expired. Please log in again.',
     admin: 'Admin',
     users: 'Users',
     roles: 'Roles',

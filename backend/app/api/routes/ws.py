@@ -1,12 +1,12 @@
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 import os
 import logging
-from typing import Set, Optional
+from typing import Dict, Optional
 import asyncio
 import json
 import time
 
-from app.core.security import decode_access_token
+from app.core.security import decode_access_token, decode_access_token_exp
 from .pubsub import PubSub
 from app.db.session import SessionLocal
 from app.crud import create_entry as crud_create_entry, update_entry as crud_update_entry, delete_entry as crud_delete_entry, get_entry as crud_get_entry
@@ -14,7 +14,8 @@ router = APIRouter()
 logger = logging.getLogger("uvicorn.error")
 
 _PUBSUB_CHANNEL = os.getenv("PUBSUB_CHANNEL", "intranet-pubsub")
-connections: Set[WebSocket] = set()
+# Maps WebSocket → {"exp": float | None} where exp is the token's UTC Unix expiry.
+connections: Dict[WebSocket, dict] = {}
 
 _pubsub = PubSub(channel=_PUBSUB_CHANNEL)
 
@@ -48,6 +49,32 @@ async def _start_heartbeat(loop_interval: int = 10):
                 except Exception:
                     # swallow so heartbeat loop continues
                     pass
+
+                # Check for connections whose access token has expired and notify them.
+                try:
+                    now = time.time()
+                    expired_conns = [
+                        ws for ws, meta in list(connections.items())
+                        if isinstance(meta, dict)
+                        and meta.get("exp") is not None
+                        and now >= meta["exp"]
+                    ]
+                    for ws in expired_conns:
+                        try:
+                            await ws.send_text(json.dumps({"type": "session_expired"}))
+                        except Exception:
+                            # Ignore send errors; connection may already be broken.
+                            pass
+                        try:
+                            await ws.close(code=1008)
+                        except Exception:
+                            # Ignore close errors; connection cleanup continues.
+                            pass
+                        connections.pop(ws, None)
+                except Exception:
+                    # Protect heartbeat loop from unexpected data in `connections`.
+                    logger.exception("Error while scanning/evicting expired WebSocket connections")
+
                 await asyncio.sleep(loop_interval)
         except asyncio.CancelledError:
             return
@@ -247,7 +274,7 @@ async def _forward_to_local_connections(message: str):
         except Exception:
             pass
     for d in dead:
-        connections.discard(d)
+        connections.pop(d, None)
 
 
 # attach the forwarder to the pubsub so messages published through valkey
@@ -284,7 +311,13 @@ async def websocket_endpoint(websocket: WebSocket):
         await websocket.send_text(json.dumps({"type": "server_info", "pid": os.getpid()}))
     except Exception:
         pass
-    connections.add(websocket)
+    token_exp = None
+    try:
+        if token:
+            token_exp = decode_access_token_exp(token)
+    except Exception:
+        pass
+    connections[websocket] = {"exp": token_exp}
     # ensure heartbeat task is running (best-effort)
     try:
         await _start_heartbeat()
@@ -562,7 +595,7 @@ async def websocket_endpoint(websocket: WebSocket):
                     except Exception:
                         dead.append(conn)
                 for d in dead:
-                    connections.discard(d)
+                    connections.pop(d, None)
                 continue
 
             # publish an ack for monitoring/debugging
@@ -599,7 +632,7 @@ async def websocket_endpoint(websocket: WebSocket):
     except WebSocketDisconnect:
         pass
     finally:
-        connections.discard(websocket)
+        connections.pop(websocket, None)
 
 
 @router.get("/diagnostics")
