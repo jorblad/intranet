@@ -187,7 +187,15 @@ def _make_org_admin_user(user_id: str, org_id: str):
     return SimpleNamespace(id=user_id, display_name="Admin", organization_roles=[assignment])
 
 
-def _make_http_test_db():
+@pytest.fixture()
+def http_test_db():
+    """Fixture that wires an in-memory SQLite DB into the FastAPI app for route tests.
+
+    The ``get_db`` override is always removed in teardown (even when a test
+    fails), preventing leak into subsequent tests.
+    """
+    from app.api.routes.auth import get_current_user
+
     engine = create_engine(
         "sqlite:///:memory:",
         connect_args={"check_same_thread": False},
@@ -204,7 +212,10 @@ def _make_http_test_db():
             db.close()
 
     app.dependency_overrides[get_db] = override_get_db
-    return TestingSession
+    yield TestingSession
+    app.dependency_overrides.pop(get_db, None)
+    # ensure a stale user override never leaks to the next test
+    app.dependency_overrides.pop(get_current_user, None)
 
 
 def _seed_http_entry(Session):
@@ -250,84 +261,93 @@ def _seed_http_entry(Session):
         db.close()
 
 
-def test_history_endpoint_returns_history():
+def test_history_endpoint_returns_history(http_test_db):
     from app.api.routes.auth import get_current_user
 
-    Session = _make_http_test_db()
-    schedule_id, entry_id, hist_id, org_id, u_id = _seed_http_entry(Session)
+    schedule_id, entry_id, hist_id, org_id, u_id = _seed_http_entry(http_test_db)
     user = _make_member_user(u_id, org_id)
     app.dependency_overrides[get_current_user] = lambda: user
+    try:
+        client = TestClient(app)
+        resp = client.get(f"/api/schedules/{schedule_id}/entries/{entry_id}/history")
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert len(data) == 1
+        assert data[0]["action"] == "create"
+        assert data[0]["entry_id"] == entry_id
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
 
-    client = TestClient(app)
-    resp = client.get(f"/api/schedules/{schedule_id}/entries/{entry_id}/history")
-    assert resp.status_code == 200
-    data = resp.json()["data"]
-    assert len(data) == 1
-    assert data[0]["action"] == "create"
-    assert data[0]["entry_id"] == entry_id
 
-    app.dependency_overrides.pop(get_current_user, None)
-    app.dependency_overrides.pop(get_db, None)
+def test_history_endpoint_cross_org_forbidden(http_test_db):
+    """A user from a different org must not access the history endpoint."""
+    from app.api.routes.auth import get_current_user
+
+    schedule_id, entry_id, hist_id, org_id, u_id = _seed_http_entry(http_test_db)
+    # Different org — this user is not assigned to `org_id`
+    other_org_id = str(uuid.uuid4())
+    outsider = _make_member_user(str(uuid.uuid4()), other_org_id)
+    app.dependency_overrides[get_current_user] = lambda: outsider
+    try:
+        client = TestClient(app)
+        resp = client.get(f"/api/schedules/{schedule_id}/entries/{entry_id}/history")
+        assert resp.status_code == 403
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
 
 
-def test_revert_own_change_as_member():
+def test_revert_own_change_as_member(http_test_db):
     """A member can revert their own change."""
     from app.api.routes.auth import get_current_user
 
-    Session = _make_http_test_db()
-    schedule_id, entry_id, hist_id, org_id, u_id = _seed_http_entry(Session)
+    schedule_id, entry_id, hist_id, org_id, u_id = _seed_http_entry(http_test_db)
     user = _make_member_user(u_id, org_id)
     app.dependency_overrides[get_current_user] = lambda: user
+    try:
+        client = TestClient(app)
+        resp = client.post(
+            f"/api/schedules/{schedule_id}/entries/{entry_id}/revert/{hist_id}"
+        )
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert data["name"] == "Original Name"
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
 
-    client = TestClient(app)
-    resp = client.post(
-        f"/api/schedules/{schedule_id}/entries/{entry_id}/revert/{hist_id}"
-    )
-    assert resp.status_code == 200
-    data = resp.json()["data"]
-    assert data["name"] == "Original Name"
 
-    app.dependency_overrides.pop(get_current_user, None)
-    app.dependency_overrides.pop(get_db, None)
-
-
-def test_revert_other_change_as_non_admin_forbidden():
+def test_revert_other_change_as_non_admin_forbidden(http_test_db):
     """A member cannot revert another user's change."""
     from app.api.routes.auth import get_current_user
 
-    Session = _make_http_test_db()
-    schedule_id, entry_id, hist_id, org_id, u_id = _seed_http_entry(Session)
+    schedule_id, entry_id, hist_id, org_id, u_id = _seed_http_entry(http_test_db)
     # A different user in the same org
     other_u_id = str(uuid.uuid4())
     user = _make_member_user(other_u_id, org_id)
     app.dependency_overrides[get_current_user] = lambda: user
+    try:
+        client = TestClient(app)
+        resp = client.post(
+            f"/api/schedules/{schedule_id}/entries/{entry_id}/revert/{hist_id}"
+        )
+        assert resp.status_code == 403
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
 
-    client = TestClient(app)
-    resp = client.post(
-        f"/api/schedules/{schedule_id}/entries/{entry_id}/revert/{hist_id}"
-    )
-    assert resp.status_code == 403
 
-    app.dependency_overrides.pop(get_current_user, None)
-    app.dependency_overrides.pop(get_db, None)
-
-
-def test_revert_by_org_admin_allowed():
+def test_revert_by_org_admin_allowed(http_test_db):
     """An org admin can revert any change in their org."""
     from app.api.routes.auth import get_current_user
 
-    Session = _make_http_test_db()
-    schedule_id, entry_id, hist_id, org_id, u_id = _seed_http_entry(Session)
+    schedule_id, entry_id, hist_id, org_id, u_id = _seed_http_entry(http_test_db)
     # Different user (admin) reverting someone else's change
     admin_id = str(uuid.uuid4())
     user = _make_org_admin_user(admin_id, org_id)
     app.dependency_overrides[get_current_user] = lambda: user
-
-    client = TestClient(app)
-    resp = client.post(
-        f"/api/schedules/{schedule_id}/entries/{entry_id}/revert/{hist_id}"
-    )
-    assert resp.status_code == 200
-
-    app.dependency_overrides.pop(get_current_user, None)
-    app.dependency_overrides.pop(get_db, None)
+    try:
+        client = TestClient(app)
+        resp = client.post(
+            f"/api/schedules/{schedule_id}/entries/{entry_id}/revert/{hist_id}"
+        )
+        assert resp.status_code == 200
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
