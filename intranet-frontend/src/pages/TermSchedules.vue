@@ -1221,7 +1221,6 @@ export default {
           historyList: [],
           historyLoading: false,
           historyLoadError: null,
-          historyReverting: false,
           historyRevertingId: null,
     };
   },
@@ -3111,7 +3110,6 @@ export default {
 
     async revertToHistory(hist) {
       if (!this.historyEntry || !this.scheduleId) return
-      this.historyReverting = true
       this.historyRevertingId = hist.id
       try {
         const resp = await api.post(
@@ -3143,7 +3141,6 @@ export default {
         console.error('Failed to revert', e)
         this.$q.notify({ type: 'negative', message: this.$t('termschedules.history_revert_failed') })
       } finally {
-        this.historyReverting = false
         this.historyRevertingId = null
       }
     },

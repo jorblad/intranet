@@ -483,7 +483,7 @@ def test_entries_bulk_update_success_path_updates():
     schedule = SimpleNamespace(id="sched-2", organization_id="org-2")
     restore = _override_schedule_and_rbac(app, schedule, assigned_to_org=True, superadmin=False)
 
-    def fake_bulk_update_entries(_db, _schedule, payload):
+    def fake_bulk_update_entries(_db, _schedule, payload, changed_by_id=None):
         # Echo back payload as "updated" entries with an extra field to prove it ran.
         from types import SimpleNamespace as SN
         import datetime

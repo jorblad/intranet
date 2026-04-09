@@ -123,7 +123,7 @@ def test_update_entry_adding_cant_come_removes_assignments():
             [],
         )
         # now add cant_come for the same user
-        updated = update_entry(db, entry, None, None, None, None, None, None, None, None, None, [u1_id])
+        updated = update_entry(db, entry, None, None, None, None, None, None, None, None, None, cant_come_ids=[u1_id])
         resp_ids = {str(u.id) for u in updated.responsible_users}
         cant_ids = {str(u.id) for u in updated.cant_come_users}
 
