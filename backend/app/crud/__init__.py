@@ -1,4 +1,4 @@
-from app.crud.entry import create_entry, delete_entry, get_entry, list_entries, update_entry
+from app.crud.entry import create_entry, delete_entry, get_entry, list_entries, update_entry, revert_entry
 from app.crud.entry_history import (
     get_history_entry,
     list_entry_history,
@@ -139,6 +139,7 @@ __all__ = [
     "set_setting",
     "list_settings",
     "update_entry",
+    "revert_entry",
     "update_schedule",
     "get_history_entry",
     "list_entry_history",

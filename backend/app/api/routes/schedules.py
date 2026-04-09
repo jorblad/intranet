@@ -21,6 +21,7 @@ from app.crud import (
     get_schedule,
     list_entries,
     list_schedules,
+    revert_entry,
     update_entry,
     update_schedule,
     get_history_entry,
@@ -709,40 +710,9 @@ def entry_revert(
     except Exception:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid history snapshot")
 
-    import datetime as _dt
-
-    def _parse_date(val):
-        if not val:
-            return None
-        try:
-            return _dt.date.fromisoformat(val)
-        except Exception:
-            return None
-
-    def _parse_datetime(val):
-        if not val:
-            return None
-        try:
-            return _dt.datetime.fromisoformat(val)
-        except Exception:
-            return None
-
-    entry = update_entry(
-        db,
-        entry,
-        _parse_date(snap.get("date")),
-        _parse_datetime(snap.get("start")),
-        _parse_datetime(snap.get("end")),
-        snap.get("name"),
-        snap.get("description"),
-        snap.get("notes"),
-        snap.get("public_event"),
-        snap.get("responsible_ids"),
-        snap.get("devotional_ids"),
-        snap.get("cant_come_ids"),
-        changed_by_id=user_id,
-        action="revert",
-    )
+    # Apply snapshot directly so that explicit-null fields (start, end,
+    # description, notes …) are cleared rather than left unchanged.
+    entry = revert_entry(db, entry, snap, changed_by_id=user_id)
 
     # Publish so other connected clients refresh
     try:

@@ -1346,18 +1346,10 @@ export default {
                 if (sid === this.scheduleId) {
                   try { console.info('orbit subscribe callback for', sid, 'rows:', Array.isArray(rows) ? rows.length : typeof rows) } catch (e) {}
                   try {
-                    const mapIdsToOptions = (ids) => {
-                      if (!Array.isArray(ids)) return []
-                      return ids.map((id) => {
-                        if (id && typeof id === 'object' && ('value' in id || 'id' in id)) return id
-                        const found = this.formattedUsers.find((u) => String(u.value) === String(id))
-                        return found || { label: String(id), value: id }
-                      })
-                    }
                     const normalized = (rows || []).map((r) => Object.assign({}, r, {
-                      responsible: mapIdsToOptions(r.responsible || r.responsible_ids || []),
-                      devotional: mapIdsToOptions(r.devotional || r.devotional_ids || []),
-                      cant_come: mapIdsToOptions(r.cant_come || r.cant_come_ids || []),
+                      responsible: this._mapIdsToOptions(r.responsible || r.responsible_ids || []),
+                      devotional: this._mapIdsToOptions(r.devotional || r.devotional_ids || []),
+                      cant_come: this._mapIdsToOptions(r.cant_come || r.cant_come_ids || []),
                     }))
                     this.rows = this.sortMethod(normalized, 'date', false)
                   } catch (e) {
@@ -1382,20 +1374,12 @@ export default {
                     const sid = d.scheduleId
                     if (sid !== this.scheduleId) return
                     const incoming = Array.isArray(d.rows) ? d.rows.slice() : []
-                    const mapIdsToOptions = (ids) => {
-                      if (!Array.isArray(ids)) return []
-                        return ids.map((id) => {
-                          if (id && typeof id === 'object' && ('value' in id || 'id' in id)) return id
-                          const found = this.formattedUsers.find((u) => String(u.value) === String(id))
-                          return found || { label: String(id), value: id }
-                        })
-                    }
                     const newRows = incoming.map((r) => {
                       try {
                         return Object.assign({}, r, {
-                          responsible: mapIdsToOptions(r.responsible || r.responsible_ids || []),
-                          devotional: mapIdsToOptions(r.devotional || r.devotional_ids || []),
-                          cant_come: mapIdsToOptions(r.cant_come || r.cant_come_ids || []),
+                          responsible: this._mapIdsToOptions(r.responsible || r.responsible_ids || []),
+                          devotional: this._mapIdsToOptions(r.devotional || r.devotional_ids || []),
+                          cant_come: this._mapIdsToOptions(r.cant_come || r.cant_come_ids || []),
                         })
                       } catch (e) { return r }
                     })
@@ -1440,6 +1424,17 @@ export default {
     },
 
   methods: {
+    // Shared helper: map an array of user IDs to Quasar-select option objects.
+    // Safe to call with Orbit data where IDs may already be option-like objects.
+    _mapIdsToOptions(ids) {
+      if (!Array.isArray(ids)) return []
+      return ids.map((id) => {
+        if (id && typeof id === 'object' && ('value' in id || 'id' in id)) return id
+        const found = this.formattedUsers.find((u) => String(u.value) === String(id))
+        return found || { label: String(id), value: id }
+      })
+    },
+
     // Display helper: prefer `start`/`end` ISO datetimes, fall back to `date`.
     displayStartEnd(row) {
       try {
@@ -1974,13 +1969,6 @@ export default {
           if (!Array.isArray(entries) || entries.length === 0) {
             try {
               const response = await api.get(`schedules/${this.scheduleId}/entries`)
-              const mapIdsToOptions = (ids) => {
-                if (!Array.isArray(ids)) return []
-                return ids.map((id) => {
-                  const found = this.formattedUsers.find((u) => u.value === id)
-                  return found || { label: String(id), value: id }
-                })
-              }
               const serverRows = response.data.data.map((entry) => ({
                 id: entry.id,
                 // preserve legacy `date` for sorting/display; provide new fields `start` and `end` as ISO datetimes
@@ -1989,9 +1977,9 @@ export default {
                 end: entry.end || (entry.date ? `${entry.date}T23:59` : null),
                 name: entry.name,
                 description: entry.description,
-                responsible: mapIdsToOptions(entry.responsible_ids),
-                devotional: mapIdsToOptions(entry.devotional_ids),
-                cant_come: mapIdsToOptions(entry.cant_come_ids),
+                responsible: this._mapIdsToOptions(entry.responsible_ids),
+                devotional: this._mapIdsToOptions(entry.devotional_ids),
+                cant_come: this._mapIdsToOptions(entry.cant_come_ids),
                 // include lastModified so Orbit merging treats server rows as authoritative
                 lastModified: entry.lastModified || entry.last_modified || Date.now(),
                 notes: entry.notes,
@@ -2005,19 +1993,11 @@ export default {
             }
           }
           // normalize any id-arrays into option-like objects so selects/chips render correctly
-          const mapIdsToOptions = (ids) => {
-            if (!Array.isArray(ids)) return []
-                return ids.map((id) => {
-                  if (id && typeof id === 'object' && ('value' in id || 'id' in id)) return id
-                  const found = this.formattedUsers.find((u) => String(u.value) === String(id))
-                  return found || { label: String(id), value: id }
-                })
-          }
           this.rows = (entries || []).map(e => ({
             ...e,
-            responsible: mapIdsToOptions(e.responsible || e.responsible_ids || []),
-            devotional: mapIdsToOptions(e.devotional || e.devotional_ids || []),
-            cant_come: mapIdsToOptions(e.cant_come || e.cant_come_ids || []),
+            responsible: this._mapIdsToOptions(e.responsible || e.responsible_ids || []),
+            devotional: this._mapIdsToOptions(e.devotional || e.devotional_ids || []),
+            cant_come: this._mapIdsToOptions(e.cant_come || e.cant_come_ids || []),
           }))
           this.rows = this.sortMethod(this.rows, 'date', false)
           return
@@ -2028,13 +2008,6 @@ export default {
       try {
         const response = await api.get(`schedules/${this.scheduleId}/entries`);
         // map server ids to option-like objects so selects and chips show friendly labels
-        const mapIdsToOptions = (ids) => {
-          if (!Array.isArray(ids)) return [];
-          return ids.map((id) => {
-            const found = this.formattedUsers.find((u) => u.value === id);
-            return found || { label: String(id), value: id };
-          });
-        };
 
         this.rows = response.data.data.map((entry) => ({
           id: entry.id,
@@ -2043,9 +2016,9 @@ export default {
           end: entry.end || (entry.date ? `${entry.date}T23:59` : null),
           name: entry.name,
           description: entry.description,
-          responsible: mapIdsToOptions(entry.responsible_ids),
-          devotional: mapIdsToOptions(entry.devotional_ids),
-          cant_come: mapIdsToOptions(entry.cant_come_ids),
+          responsible: this._mapIdsToOptions(entry.responsible_ids),
+          devotional: this._mapIdsToOptions(entry.devotional_ids),
+          cant_come: this._mapIdsToOptions(entry.cant_come_ids),
           notes: entry.notes,
           public_event: entry.public_event,
         }));
@@ -2364,18 +2337,10 @@ export default {
           await orbitSchedules.updateEntry(this.scheduleId, Object.assign({}, payload, { id: row.id }))
           try { console.debug('updateEntry(UI): after orbit update, row mapping', { id: row.id, responsible: payload.responsible_ids, devotional: payload.devotional_ids, cant_come: payload.cant_come_ids }) } catch (e) {}
           // Immediately reflect the update in the UI (avoid overwriting from server bootstrap)
-          const mapIdsToOptions = (ids) => {
-            if (!Array.isArray(ids)) return []
-            return ids.map((id) => {
-              if (id && typeof id === 'object' && ('value' in id || 'id' in id)) return id
-              const found = this.formattedUsers.find((u) => String(u.value) === String(id))
-              return found || { label: String(id), value: id }
-            })
-          }
           const updated = Object.assign({}, row, {
-            responsible: mapIdsToOptions(payload.responsible_ids),
-            devotional: mapIdsToOptions(payload.devotional_ids),
-            cant_come: mapIdsToOptions(payload.cant_come_ids),
+            responsible: this._mapIdsToOptions(payload.responsible_ids),
+            devotional: this._mapIdsToOptions(payload.devotional_ids),
+            cant_come: this._mapIdsToOptions(payload.cant_come_ids),
           })
           this.rows = this.rows.map(r => (r.id === row.id ? updated : r))
           this.rows = this.sortMethod(this.rows, 'date', false)
@@ -2956,13 +2921,6 @@ export default {
             // If using Orbit local store, refresh it with authoritative server rows
             try {
               if (USE_ORBIT && resp && resp.data && Array.isArray(resp.data.data) && orbitSchedules && typeof orbitSchedules.setLocalEntries === 'function') {
-                const mapIdsToOptions = (ids) => {
-                  if (!Array.isArray(ids)) return [];
-                  return ids.map((id) => {
-                    const found = this.formattedUsers.find((u) => u.value === id);
-                    return found || { label: String(id), value: id };
-                  });
-                };
                 const serverRows = resp.data.data.map((entry) => ({
                   id: entry.id,
                   date: entry.date,
@@ -2970,9 +2928,9 @@ export default {
                   end: entry.end || (entry.date ? `${entry.date}T23:59` : null),
                   name: entry.name,
                   description: entry.description,
-                  responsible: mapIdsToOptions(entry.responsible_ids),
-                  devotional: mapIdsToOptions(entry.devotional_ids),
-                  cant_come: mapIdsToOptions(entry.cant_come_ids),
+                  responsible: this._mapIdsToOptions(entry.responsible_ids),
+                  devotional: this._mapIdsToOptions(entry.devotional_ids),
+                  cant_come: this._mapIdsToOptions(entry.cant_come_ids),
                   // include lastModified so Orbit merging treats server rows as authoritative
                   lastModified: entry.lastModified || entry.last_modified || Date.now(),
                   notes: entry.notes,
@@ -3118,17 +3076,10 @@ export default {
         )
         const updated = resp.data && resp.data.data
         if (updated) {
-          const mapIdsToOptions = (ids) => {
-            if (!Array.isArray(ids)) return []
-            return ids.map((id) => {
-              const found = this.formattedUsers.find((u) => String(u.value) === String(id))
-              return found || { label: String(id), value: id }
-            })
-          }
           const newRow = Object.assign({}, updated, {
-            responsible: mapIdsToOptions(updated.responsible_ids || []),
-            devotional: mapIdsToOptions(updated.devotional_ids || []),
-            cant_come: mapIdsToOptions(updated.cant_come_ids || []),
+            responsible: this._mapIdsToOptions(updated.responsible_ids || []),
+            devotional: this._mapIdsToOptions(updated.devotional_ids || []),
+            cant_come: this._mapIdsToOptions(updated.cant_come_ids || []),
           })
           this.rows = this.rows.map(r => (r.id === updated.id ? newRow : r))
           this.rows = this.sortMethod(this.rows, 'date', false)
