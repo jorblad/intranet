@@ -201,6 +201,7 @@ export default {
     history: 'History',
     history_title: 'Change History',
     history_empty: 'No history available',
+    history_load_failed: 'Failed to load history',
     history_revert: 'Revert',
     history_reverted: 'Entry reverted successfully',
     history_revert_failed: 'Failed to revert entry',

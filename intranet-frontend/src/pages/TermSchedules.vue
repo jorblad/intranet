@@ -775,6 +775,9 @@
           <div v-if="historyLoading" class="text-center q-py-md">
             <q-spinner size="2em" />
           </div>
+          <div v-else-if="historyLoadError" class="text-negative">
+            {{ $t('termschedules.history_load_failed') }}
+          </div>
           <div v-else-if="!historyList || historyList.length === 0" class="text-grey">
             {{ $t('termschedules.history_empty') }}
           </div>
@@ -1216,6 +1219,7 @@ export default {
           historyEntry: null,
           historyList: [],
           historyLoading: false,
+          historyLoadError: null,
           historyReverting: false,
     };
   },
@@ -3085,6 +3089,7 @@ export default {
     async openHistory(row) {
       this.historyEntry = row
       this.historyList = []
+      this.historyLoadError = null
       this.historyDialogVisible = true
       this.historyLoading = true
       try {
@@ -3092,7 +3097,11 @@ export default {
         this.historyList = (resp.data && resp.data.data) || []
       } catch (e) {
         console.error('Failed to load history', e)
-        this.historyList = []
+        this.historyLoadError = e
+        this.$q.notify({
+          type: 'negative',
+          message: this.$t('termschedules.history_load_failed'),
+        })
       } finally {
         this.historyLoading = false
       }

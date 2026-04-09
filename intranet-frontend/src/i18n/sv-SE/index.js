@@ -231,6 +231,7 @@ export default {
     history: 'Historik',
     history_title: 'Ändringshistorik',
     history_empty: 'Ingen historik tillgänglig',
+    history_load_failed: 'Det gick inte att läsa in historiken',
     history_revert: 'Återställ',
     history_reverted: 'Posten återställdes',
     history_revert_failed: 'Misslyckades med att återställa posten',
