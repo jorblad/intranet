@@ -549,7 +549,7 @@ def entries_bulk_create(
     try:
         from app.crud.entry import bulk_create_entries
 
-        created = bulk_create_entries(db, schedule_id, entries_data)
+        created = bulk_create_entries(db, schedule_id, entries_data, changed_by_id=getattr(_user, 'id', None))
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 

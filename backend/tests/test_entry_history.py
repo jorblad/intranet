@@ -155,7 +155,6 @@ def test_delete_entry_records_history():
         )
         entry_id = entry.id
         delete_entry(db, entry, changed_by_id=u2_id)
-        db.commit()
 
         # Entry should be gone
         assert db.query(ScheduleEntry).filter(ScheduleEntry.id == entry_id).first() is None
