@@ -700,6 +700,8 @@ def entry_revert(
     entry = get_entry(db, entry_id)
     if not entry:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Entry not found")
+    if entry.schedule_id != schedule_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Entry not found")
 
     # Parse snapshot and apply
     try:

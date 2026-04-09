@@ -114,7 +114,10 @@ def test_update_entry_records_history():
             changed_by_id=u1_id,
         )
         entry = update_entry(
-            db, entry, None, None, None, "Updated", None, None, None, None, None, None,
+            db, entry, None, None, None, "Updated", None, None, None,
+            responsible_ids=None,
+            devotional_ids=None,
+            cant_come_ids=None,
             changed_by_id=u2_id,
         )
         history = list_entry_history(db, entry.id)
