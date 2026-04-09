@@ -26,6 +26,7 @@ def upgrade():
         sa.Column('snapshot', sa.Text(), nullable=False),
         sa.ForeignKeyConstraint(['changed_by_id'], ['users.id'], ondelete='SET NULL'),
         sa.ForeignKeyConstraint(['entry_id'], ['schedule_entries.id'], ondelete='SET NULL'),
+        sa.ForeignKeyConstraint(['schedule_id'], ['schedules.id'], ondelete='CASCADE'),
         sa.PrimaryKeyConstraint('id'),
     )
     op.create_index('ix_entry_history_entry_id', 'entry_history', ['entry_id'])

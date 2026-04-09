@@ -686,11 +686,12 @@ def entry_revert(
     user_id = getattr(_user, 'id', None)
 
     # Authorization: org admin (or superadmin) can revert any change; a regular
-    # member can only revert their own changes.
+    # member can only revert their own changes if they still have access to the org.
     is_admin = is_superadmin(_user) or (org is not None and user_has_role(_user, "org_admin", org))
+    has_org_access = org is not None and user_assigned_to_org(_user, org)
     is_own_change = user_id and hist.changed_by_id and str(hist.changed_by_id) == str(user_id)
 
-    if not is_admin and not is_own_change:
+    if not is_admin and not (has_org_access and is_own_change):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not authorized to revert this change",

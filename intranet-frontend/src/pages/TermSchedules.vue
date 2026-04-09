@@ -404,9 +404,9 @@
               />
             </q-td>
             <q-td key="actions" :props="props" class="text-center">
-              <q-btn dense flat round color="primary" icon="edit" @click.stop="openDialog(props.row)" v-if="$q.screen.lt.sm" class="q-mr-xs" />
-              <q-btn dense flat round color="grey" icon="history" @click.stop="openHistory(props.row)" class="q-mr-xs" :title="$t('termschedules.history')" />
-              <q-btn dense flat round color="negative" icon="delete" @click.stop="deleteEntryInline(props.row)" />
+              <q-btn dense flat round color="primary" icon="edit" @click.stop="openDialog(props.row)" v-if="$q.screen.lt.sm" class="q-mr-xs" :aria-label="$t('termschedules.edit')" />
+              <q-btn dense flat round color="grey" icon="history" @click.stop="openHistory(props.row)" class="q-mr-xs" :title="$t('termschedules.history')" :aria-label="$t('termschedules.history')" />
+              <q-btn dense flat round color="negative" icon="delete" @click.stop="deleteEntryInline(props.row)" :aria-label="$t('termschedules.delete')" />
             </q-td>
           </q-tr>
           </template>

@@ -12,7 +12,7 @@ class EntryHistory(Base):
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     entry_id = Column(String, ForeignKey("schedule_entries.id", ondelete="SET NULL"), nullable=True)
-    schedule_id = Column(String, nullable=False)
+    schedule_id = Column(String, ForeignKey("schedules.id", ondelete="CASCADE"), nullable=False)
     changed_by_id = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     changed_at = Column(
         DateTime(timezone=True),
