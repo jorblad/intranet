@@ -227,7 +227,17 @@ export default {
     end_label: 'Slut'
     ,
     activity_calendar_url: 'Publik aktivitetskalenderlänk',
-    public_calendar_url: 'Publik kalenderlänk'
+    public_calendar_url: 'Publik kalenderlänk',
+    history: 'Historik',
+    history_title: 'Ändringshistorik',
+    history_empty: 'Ingen historik tillgänglig',
+    history_revert: 'Återställ',
+    history_reverted: 'Posten återställdes',
+    history_revert_failed: 'Misslyckades med att återställa posten',
+    history_action_create: 'Skapad',
+    history_action_update: 'Uppdaterad',
+    history_action_delete: 'Borttagen',
+    history_action_revert: 'Återställd',
   }
   ,
   termschedules_extras: {

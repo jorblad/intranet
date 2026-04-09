@@ -1,6 +1,7 @@
 from sqlalchemy.orm import Session
 
 from app.models import ScheduleEntry, User
+from app.crud.entry_history import record_history
 import logging
 
 logger = logging.getLogger(__name__)
@@ -84,6 +85,7 @@ def create_entry(
     responsible_ids: list[str],
     devotional_ids: list[str],
     cant_come_ids: list[str],
+    changed_by_id: str | None = None,
 ) -> ScheduleEntry:
     entry = ScheduleEntry(
         schedule_id=schedule_id,
@@ -101,12 +103,14 @@ def create_entry(
     entry.devotional_users = _resolve_users(db, d_ids)
     entry.cant_come_users = _resolve_users(db, c_ids)
     db.add(entry)
+    db.flush()
+    record_history(db, entry, "create", changed_by_id)
     db.commit()
     db.refresh(entry)
     return entry
 
 
-def bulk_create_entries(db: Session, schedule_id: str, entries_data: list[dict]) -> list[ScheduleEntry]:
+def bulk_create_entries(db: Session, schedule_id: str, entries_data: list[dict], changed_by_id: str | None = None) -> list[ScheduleEntry]:
     created = []
     try:
         for entry in entries_data:
@@ -133,6 +137,10 @@ def bulk_create_entries(db: Session, schedule_id: str, entries_data: list[dict])
             e_obj.responsible_users = _resolve_users(db, r_ids)
             e_obj.devotional_users = _resolve_users(db, d_ids)
             e_obj.cant_come_users = _resolve_users(db, c_ids)
+        db.flush()
+        # record history after relationships are set
+        for e_obj, _ in created:
+            record_history(db, e_obj, "create", changed_by_id)
         db.commit()
         # refresh and return
         out = []
@@ -159,6 +167,8 @@ def _update_entry_in_session(
     devotional_ids: list[str] | None,
     cant_come_ids: list[str] | None,
     commit: bool = True,
+    changed_by_id: str | None = None,
+    action: str = "update",
 ) -> ScheduleEntry:
     if date is not None:
         entry.date = date
@@ -193,8 +203,11 @@ def _update_entry_in_session(
         entry.devotional_users = _resolve_users(db, d_ids)
         entry.cant_come_users = _resolve_users(db, c_ids)
     if commit:
+        record_history(db, entry, action, changed_by_id)
         db.commit()
         db.refresh(entry)
+    else:
+        record_history(db, entry, action, changed_by_id)
     return entry
 
 def update_entry(
@@ -210,6 +223,8 @@ def update_entry(
     responsible_ids: list[str] | None,
     devotional_ids: list[str] | None,
     cant_come_ids: list[str] | None,
+    changed_by_id: str | None = None,
+    action: str = "update",
 ) -> ScheduleEntry:
     return _update_entry_in_session(
         db,
@@ -224,15 +239,18 @@ def update_entry(
         responsible_ids,
         devotional_ids,
         cant_come_ids,
+        changed_by_id=changed_by_id,
+        action=action,
     )
 
 
-def delete_entry(db: Session, entry: ScheduleEntry) -> None:
+def delete_entry(db: Session, entry: ScheduleEntry, changed_by_id: str | None = None) -> None:
+    record_history(db, entry, "delete", changed_by_id)
     db.delete(entry)
     db.commit()
 
 
-def bulk_update_entries(db: Session, schedule_id: str, updates: list[dict]) -> list[ScheduleEntry]:
+def bulk_update_entries(db: Session, schedule_id: str, updates: list[dict], changed_by_id: str | None = None) -> list[ScheduleEntry]:
     """Apply multiple entry updates in a single transaction and return updated objects.
 
     Each update dict must include 'id' and any update fields.
@@ -267,6 +285,7 @@ def bulk_update_entries(db: Session, schedule_id: str, updates: list[dict]) -> l
                 u.get('devotional_ids', None),
                 u.get('cant_come_ids', None),
                 commit=False,
+                changed_by_id=changed_by_id,
             )
             updated.append(entry)
         db.commit()

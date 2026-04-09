@@ -13,6 +13,7 @@ from app.models.role_permission_resource import RolePermissionResource
 from app.models.admin_message import AdminMessage
 from app.models.invitation import Invitation
 from app.models.app_setting import AppSetting
+from app.models.entry_history import EntryHistory
 
 __all__ = [
 	"Activity",
@@ -30,4 +31,5 @@ __all__ = [
 	"AdminMessage",
 	"Invitation",
 	"AppSetting",
+	"EntryHistory",
 ]

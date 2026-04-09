@@ -23,6 +23,8 @@ from app.crud import (
     list_schedules,
     update_entry,
     update_schedule,
+    get_history_entry,
+    list_entry_history,
 )
 from app.db.session import get_db
 from app.schemas.entry import EntryCreate, EntryUpdate, EntryBulkUpdate
@@ -284,6 +286,7 @@ def entries_create(
         payload.responsible_ids,
         payload.devotional_ids,
         payload.cant_come_ids,
+        changed_by_id=getattr(_user, 'id', None),
     )
     return {"data": _entry_to_dict(entry)}
 
@@ -326,7 +329,7 @@ def entries_bulk_update(
                 print(f"entries_bulk_update: filtered out {len(skipped)} local placeholder ids: {skipped}")
         except Exception:
             pass
-        updated = bulk_update_entries(db, schedule_id, filtered)
+        updated = bulk_update_entries(db, schedule_id, filtered, changed_by_id=getattr(_user, 'id', None))
     except ValueError as e:
         # Validation / client errors (e.g., missing id or invalid ownership) -> 400
         import traceback
@@ -598,6 +601,7 @@ def entries_update(
         payload.responsible_ids,
         payload.devotional_ids,
         payload.cant_come_ids,
+        changed_by_id=getattr(_user, 'id', None),
     )
     return {"data": _entry_to_dict(entry)}
 
@@ -619,5 +623,140 @@ def entries_delete(
         if not (is_superadmin(_user) or user_assigned_to_org(_user, org)):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to delete this entry")
 
-    delete_entry(db, entry)
+    delete_entry(db, entry, changed_by_id=getattr(_user, 'id', None))
     return None
+
+
+def _history_to_dict(hist):
+    return {
+        "id": hist.id,
+        "entry_id": hist.entry_id,
+        "schedule_id": hist.schedule_id,
+        "changed_by_id": hist.changed_by_id,
+        "changed_by_name": hist.changed_by.display_name if hist.changed_by else None,
+        "changed_at": hist.changed_at.isoformat() if hist.changed_at else None,
+        "action": hist.action,
+        "snapshot": hist.snapshot,
+    }
+
+
+@router.get("/schedules/{schedule_id}/entries/{entry_id}/history")
+def entry_history_list(
+    schedule_id: str,
+    entry_id: str,
+    db: Session = Depends(get_db),
+    _user=Depends(get_current_user),
+):
+    schedule = get_schedule(db, schedule_id)
+    if not schedule:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Schedule not found")
+    if getattr(schedule, 'organization_id', None):
+        if not (is_superadmin(_user) or user_assigned_to_org(_user, schedule.organization_id)):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized")
+    history = list_entry_history(db, entry_id)
+    return {"data": [_history_to_dict(h) for h in history]}
+
+
+@router.post("/schedules/{schedule_id}/entries/{entry_id}/revert/{history_id}", status_code=status.HTTP_200_OK)
+def entry_revert(
+    schedule_id: str,
+    entry_id: str,
+    history_id: str,
+    db: Session = Depends(get_db),
+    _user=Depends(get_current_user),
+):
+    import json as _json
+
+    schedule = get_schedule(db, schedule_id)
+    if not schedule:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Schedule not found")
+
+    org = getattr(schedule, 'organization_id', None)
+
+    # Retrieve the history record
+    hist = get_history_entry(db, history_id)
+    if not hist or hist.entry_id != entry_id or hist.schedule_id != schedule_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="History record not found")
+
+    user_id = getattr(_user, 'id', None)
+
+    # Authorization: org admin (or superadmin) can revert any change; a regular
+    # member can only revert their own changes.
+    is_admin = is_superadmin(_user) or (org is not None and _user_has_role(_user, "org_admin", org))
+    is_own_change = user_id and hist.changed_by_id and str(hist.changed_by_id) == str(user_id)
+
+    if not is_admin and not is_own_change:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to revert this change",
+        )
+
+    entry = get_entry(db, entry_id)
+    if not entry:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Entry not found")
+
+    # Parse snapshot and apply
+    try:
+        snap = _json.loads(hist.snapshot)
+    except Exception:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid history snapshot")
+
+    import datetime as _dt
+
+    def _parse_date(val):
+        if not val:
+            return None
+        try:
+            return _dt.date.fromisoformat(val)
+        except Exception:
+            return None
+
+    def _parse_datetime(val):
+        if not val:
+            return None
+        try:
+            return _dt.datetime.fromisoformat(val)
+        except Exception:
+            return None
+
+    entry = update_entry(
+        db,
+        entry,
+        _parse_date(snap.get("date")),
+        _parse_datetime(snap.get("start")),
+        _parse_datetime(snap.get("end")),
+        snap.get("name"),
+        snap.get("description"),
+        snap.get("notes"),
+        snap.get("public_event"),
+        snap.get("responsible_ids"),
+        snap.get("devotional_ids"),
+        snap.get("cant_come_ids"),
+        changed_by_id=user_id,
+        action="revert",
+    )
+
+    # Publish so other connected clients refresh
+    try:
+        rows_map = {schedule_id: [_entry_to_dict(entry)]}
+        transform = {"rows": rows_map}
+        pub_payload = {"type": "transform", "transform": transform}
+        envelope = json.dumps({"__origin_pid": os.getpid(), "payload": pub_payload})
+        _pubsub.schedule_publish(envelope)
+    except Exception:
+        pass
+
+    return {"data": _entry_to_dict(entry)}
+
+
+def _user_has_role(user, role_name: str, organization_id: str | None = None) -> bool:
+    for a in getattr(user, "organization_roles", []) or []:
+        if not a.role:
+            continue
+        if a.role.name == role_name:
+            if organization_id is None:
+                return True
+            if a.organization_id == organization_id:
+                return True
+    return False
+

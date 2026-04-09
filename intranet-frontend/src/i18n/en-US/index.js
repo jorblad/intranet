@@ -197,7 +197,17 @@ export default {
     frequency_label: 'Frequency',
     weekdays_label: 'Weekdays',
     activity_calendar_url: 'Activity public calendar URL',
-    public_calendar_url: 'Public calendar URL'
+    public_calendar_url: 'Public calendar URL',
+    history: 'History',
+    history_title: 'Change History',
+    history_empty: 'No history available',
+    history_revert: 'Revert',
+    history_reverted: 'Entry reverted successfully',
+    history_revert_failed: 'Failed to revert entry',
+    history_action_create: 'Created',
+    history_action_update: 'Updated',
+    history_action_delete: 'Deleted',
+    history_action_revert: 'Reverted',
   },
   termschedules_extras: {
     copy_activity_calendar: 'Copy activity calendar link',

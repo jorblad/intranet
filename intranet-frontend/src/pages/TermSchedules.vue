@@ -405,6 +405,7 @@
             </q-td>
             <q-td key="actions" :props="props" class="text-center">
               <q-btn dense flat round color="primary" icon="edit" @click.stop="openDialog(props.row)" v-if="$q.screen.lt.sm" class="q-mr-xs" />
+              <q-btn dense flat round color="grey" icon="history" @click.stop="openHistory(props.row)" class="q-mr-xs" :title="$t('termschedules.history')" />
               <q-btn dense flat round color="negative" icon="delete" @click.stop="deleteEntryInline(props.row)" />
             </q-td>
           </q-tr>
@@ -465,6 +466,7 @@
                     <q-card-actions align="right">
                       <q-toggle v-model="row.public_event" dense @update:model-value="() => updateEntry(row)" :label="$t('termschedules.public')" />
                       <q-btn flat dense color="primary" icon="edit" :label="$t('termschedules.edit')" @click="openDialog(row)" />
+                      <q-btn flat dense color="grey" icon="history" :label="$t('termschedules.history')" @click="openHistory(row)" />
                       <q-btn flat dense color="negative" icon="delete" :label="$t('termschedules.delete')" @click="deleteEntryInline(row)" />
                     </q-card-actions>
                   </q-card>
@@ -757,6 +759,53 @@
           <q-btn flat label="Avbryt" color="secondary" @click="createActivityDialogVisible = false" />
           <q-space />
           <q-btn flat label="Skapa" color="primary" @click="createActivity" />
+        </q-card-actions>
+      </q-card>
+    </q-dialog>
+
+
+
+    <!-- History Dialog -->
+    <q-dialog v-model="historyDialogVisible" full-width>
+      <q-card style="min-width: 320px; max-width: 95vw;">
+        <q-card-section>
+          <div class="text-h6">{{ $t('termschedules.history_title') }}: {{ historyEntry && historyEntry.name }}</div>
+        </q-card-section>
+        <q-card-section>
+          <div v-if="historyLoading" class="text-center q-py-md">
+            <q-spinner size="2em" />
+          </div>
+          <div v-else-if="!historyList || historyList.length === 0" class="text-grey">
+            {{ $t('termschedules.history_empty') }}
+          </div>
+          <q-list v-else bordered separator>
+            <q-item v-for="hist in historyList" :key="hist.id">
+              <q-item-section>
+                <q-item-label>
+                  <q-badge :color="historyActionColor(hist.action)" class="q-mr-sm">{{ $t('termschedules.history_action_' + hist.action) || hist.action }}</q-badge>
+                  <span class="text-caption text-grey">{{ formatHistoryDate(hist.changed_at) }}</span>
+                  <span v-if="hist.changed_by_name" class="text-caption q-ml-sm">– {{ hist.changed_by_name }}</span>
+                </q-item-label>
+                <q-item-label caption v-if="hist.snapshot">
+                  {{ historySnapshotSummary(hist.snapshot) }}
+                </q-item-label>
+              </q-item-section>
+              <q-item-section side>
+                <q-btn
+                  flat
+                  dense
+                  color="primary"
+                  icon="restore"
+                  :label="$t('termschedules.history_revert')"
+                  :loading="historyReverting"
+                  @click="revertToHistory(hist)"
+                />
+              </q-item-section>
+            </q-item>
+          </q-list>
+        </q-card-section>
+        <q-card-actions align="right">
+          <q-btn flat :label="$t('termschedules.cancel')" @click="historyDialogVisible = false" />
         </q-card-actions>
       </q-card>
     </q-dialog>
@@ -1162,6 +1211,12 @@ export default {
           noteDialogTitle: '',
           // allow expanding the detail dialog to full width per-row (opt-in)
           detailFullWidth: false,
+          // history dialog state
+          historyDialogVisible: false,
+          historyEntry: null,
+          historyList: [],
+          historyLoading: false,
+          historyReverting: false,
     };
   },
 
@@ -3026,6 +3081,101 @@ export default {
     //     term: program.relationships.field_termin.data.id,
     //   }));
     // },
+
+    async openHistory(row) {
+      this.historyEntry = row
+      this.historyList = []
+      this.historyDialogVisible = true
+      this.historyLoading = true
+      try {
+        const token = localStorage.getItem('access_token')
+        const headers = token ? { Authorization: `Bearer ${token}` } : {}
+        const resp = await axios.get(`/api/schedules/${this.scheduleId}/entries/${row.id}/history`, { headers })
+        this.historyList = (resp.data && resp.data.data) || []
+      } catch (e) {
+        console.error('Failed to load history', e)
+        this.historyList = []
+      } finally {
+        this.historyLoading = false
+      }
+    },
+
+    async revertToHistory(hist) {
+      if (!this.historyEntry || !this.scheduleId) return
+      this.historyReverting = true
+      try {
+        const token = localStorage.getItem('access_token')
+        const headers = token ? { Authorization: `Bearer ${token}` } : {}
+        const resp = await axios.post(
+          `/api/schedules/${this.scheduleId}/entries/${this.historyEntry.id}/revert/${hist.id}`,
+          {},
+          { headers }
+        )
+        const updated = resp.data && resp.data.data
+        if (updated) {
+          const mapIdsToOptions = (ids) => {
+            if (!Array.isArray(ids)) return []
+            return ids.map((id) => {
+              const found = this.formattedUsers.find((u) => String(u.value) === String(id))
+              return found || { label: String(id), value: id }
+            })
+          }
+          const newRow = Object.assign({}, updated, {
+            responsible: mapIdsToOptions(updated.responsible_ids || []),
+            devotional: mapIdsToOptions(updated.devotional_ids || []),
+            cant_come: mapIdsToOptions(updated.cant_come_ids || []),
+          })
+          this.rows = this.rows.map(r => (r.id === updated.id ? newRow : r))
+          this.rows = this.sortMethod(this.rows, 'date', false)
+          this.historyEntry = newRow
+        }
+        // Reload history list to show the new revert entry
+        await this.openHistory(this.historyEntry)
+        this.$q.notify({ type: 'positive', message: this.$t('termschedules.history_reverted') })
+      } catch (e) {
+        console.error('Failed to revert', e)
+        this.$q.notify({ type: 'negative', message: this.$t('termschedules.history_revert_failed') })
+      } finally {
+        this.historyReverting = false
+      }
+    },
+
+    historyActionColor(action) {
+      switch (action) {
+        case 'create': return 'positive'
+        case 'update': return 'primary'
+        case 'delete': return 'negative'
+        case 'revert': return 'warning'
+        default: return 'grey'
+      }
+    },
+
+    formatHistoryDate(isoStr) {
+      if (!isoStr) return ''
+      try {
+        return new Date(isoStr).toLocaleString()
+      } catch (e) {
+        return isoStr
+      }
+    },
+
+    historySnapshotSummary(snapshotJson) {
+      try {
+        const snap = typeof snapshotJson === 'string' ? JSON.parse(snapshotJson) : snapshotJson
+        const parts = []
+        if (snap.name) parts.push(snap.name)
+        if (snap.date) parts.push(snap.date)
+        if (Array.isArray(snap.responsible_ids) && snap.responsible_ids.length) {
+          parts.push(`${this.$t('termschedules.responsible_label')}: ${snap.responsible_ids.map(id => {
+            const u = this.formattedUsers.find(u => String(u.value) === String(id))
+            return u ? u.label : id
+          }).join(', ')}`)
+        }
+        return parts.join(' · ')
+      } catch (e) {
+        return ''
+      }
+    },
   }
 }
 
