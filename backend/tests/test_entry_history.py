@@ -224,6 +224,9 @@ def _seed_http_entry(Session):
     try:
         org_id = str(uuid.uuid4())
         u_id = str(uuid.uuid4())
+        # Create a real User so changed_by_id FK is satisfied and joinedload works
+        u = User(id=u_id, username=f"http_user_{u_id[:8]}", display_name="HTTP User", hashed_password="x")
+        db.add(u)
         t = Term(id=str(uuid.uuid4()), name="T")
         db.add(t)
         db.commit()

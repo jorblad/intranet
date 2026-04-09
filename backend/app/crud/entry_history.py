@@ -2,15 +2,37 @@ import json
 import logging
 from datetime import datetime, timezone
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
 from app.models import EntryHistory, ScheduleEntry
+from app.models.schedule_entry import entry_responsible, entry_devotional, entry_cant_come
 
 logger = logging.getLogger(__name__)
 
 
-def _entry_snapshot(entry: ScheduleEntry) -> str:
-    """Return a JSON snapshot of the current entry state."""
+def _entry_snapshot(entry: ScheduleEntry, db: Session) -> str:
+    """Return a JSON snapshot of the current entry state.
+
+    Queries the association tables directly to avoid triggering lazy loads
+    (which would cause 3 extra SELECTs per call when the relationships are
+    not already present in the session identity map).
+    """
+    responsible_ids = [
+        str(r) for (r,) in db.execute(
+            select(entry_responsible.c.user_id).where(entry_responsible.c.entry_id == entry.id)
+        )
+    ]
+    devotional_ids = [
+        str(r) for (r,) in db.execute(
+            select(entry_devotional.c.user_id).where(entry_devotional.c.entry_id == entry.id)
+        )
+    ]
+    cant_come_ids = [
+        str(r) for (r,) in db.execute(
+            select(entry_cant_come.c.user_id).where(entry_cant_come.c.entry_id == entry.id)
+        )
+    ]
     return json.dumps(
         {
             "id": entry.id,
@@ -22,9 +44,9 @@ def _entry_snapshot(entry: ScheduleEntry) -> str:
             "description": entry.description,
             "notes": entry.notes,
             "public_event": entry.public_event,
-            "responsible_ids": [str(u.id) for u in (entry.responsible_users or [])],
-            "devotional_ids": [str(u.id) for u in (entry.devotional_users or [])],
-            "cant_come_ids": [str(u.id) for u in (entry.cant_come_users or [])],
+            "responsible_ids": responsible_ids,
+            "devotional_ids": devotional_ids,
+            "cant_come_ids": cant_come_ids,
         }
     )
 
@@ -46,7 +68,7 @@ def record_history(
         changed_by_id=changed_by_id,
         changed_at=datetime.now(timezone.utc),
         action=action,
-        snapshot=_entry_snapshot(entry),
+        snapshot=_entry_snapshot(entry, db),
     )
     db.add(hist)
     return hist
