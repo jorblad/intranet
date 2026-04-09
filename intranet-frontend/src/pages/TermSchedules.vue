@@ -801,7 +801,7 @@
                   icon="restore"
                   :label="$t('termschedules.history_revert')"
                   :loading="historyRevertingId === hist.id"
-                  :disable="historyRevertingId === hist.id"
+                  :disable="historyRevertingId !== null"
                   @click="revertToHistory(hist)"
                 />
               </q-item-section>
@@ -3051,18 +3051,25 @@ export default {
       this.historyLoadError = null
       this.historyDialogVisible = true
       this.historyLoading = true
+      const requestedId = row.id
       try {
         const resp = await api.get(`schedules/${this.scheduleId}/entries/${row.id}/history`)
-        this.historyList = (resp.data && resp.data.data) || []
+        if (this.historyEntry && this.historyEntry.id === requestedId) {
+          this.historyList = (resp.data && resp.data.data) || []
+        }
       } catch (e) {
-        console.error('Failed to load history', e)
-        this.historyLoadError = e
-        this.$q.notify({
-          type: 'negative',
-          message: this.$t('termschedules.history_load_failed'),
-        })
+        if (this.historyEntry && this.historyEntry.id === requestedId) {
+          console.error('Failed to load history', e)
+          this.historyLoadError = e
+          this.$q.notify({
+            type: 'negative',
+            message: this.$t('termschedules.history_load_failed'),
+          })
+        }
       } finally {
-        this.historyLoading = false
+        if (this.historyEntry && this.historyEntry.id === requestedId) {
+          this.historyLoading = false
+        }
       }
     },
 
