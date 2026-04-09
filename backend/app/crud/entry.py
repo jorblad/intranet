@@ -202,12 +202,10 @@ def _update_entry_in_session(
         entry.responsible_users = _resolve_users(db, r_ids)
         entry.devotional_users = _resolve_users(db, d_ids)
         entry.cant_come_users = _resolve_users(db, c_ids)
+    record_history(db, entry, action, changed_by_id)
     if commit:
-        record_history(db, entry, action, changed_by_id)
         db.commit()
         db.refresh(entry)
-    else:
-        record_history(db, entry, action, changed_by_id)
     return entry
 
 def update_entry(
