@@ -2,7 +2,7 @@ import json
 import logging
 from datetime import datetime, timezone
 
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.models import EntryHistory, ScheduleEntry
 
@@ -58,6 +58,7 @@ def list_entry_history(
     """Return history records for a specific entry, newest first."""
     return (
         db.query(EntryHistory)
+        .options(joinedload(EntryHistory.changed_by))
         .filter(EntryHistory.entry_id == entry_id)
         .order_by(EntryHistory.changed_at.desc())
         .limit(limit)
@@ -71,6 +72,7 @@ def list_schedule_history(
     """Return history records for all entries in a schedule, newest first."""
     return (
         db.query(EntryHistory)
+        .options(joinedload(EntryHistory.changed_by))
         .filter(EntryHistory.schedule_id == schedule_id)
         .order_by(EntryHistory.changed_at.desc())
         .limit(limit)

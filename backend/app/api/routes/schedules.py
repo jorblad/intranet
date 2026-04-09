@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from app.api.routes.auth import get_current_user
 from app.core.rbac import require_org_admin_or_superadmin
 from app.core.rbac import require_superadmin
-from app.core.rbac import user_assigned_to_org, is_superadmin
+from app.core.rbac import user_assigned_to_org, is_superadmin, user_has_role
 from app.models import Schedule
 
 # TestClient-based route tests for schedules/entries bulk APIs
@@ -653,6 +653,11 @@ def entry_history_list(
     if getattr(schedule, 'organization_id', None):
         if not (is_superadmin(_user) or user_assigned_to_org(_user, schedule.organization_id)):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized")
+
+    entry = get_entry(db, entry_id)
+    if not entry or entry.schedule_id != schedule_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Entry not found")
+
     history = list_entry_history(db, entry_id)
     return {"data": [_history_to_dict(h) for h in history]}
 
@@ -682,7 +687,7 @@ def entry_revert(
 
     # Authorization: org admin (or superadmin) can revert any change; a regular
     # member can only revert their own changes.
-    is_admin = is_superadmin(_user) or (org is not None and _user_has_role(_user, "org_admin", org))
+    is_admin = is_superadmin(_user) or (org is not None and user_has_role(_user, "org_admin", org))
     is_own_change = user_id and hist.changed_by_id and str(hist.changed_by_id) == str(user_id)
 
     if not is_admin and not is_own_change:
@@ -747,16 +752,3 @@ def entry_revert(
         pass
 
     return {"data": _entry_to_dict(entry)}
-
-
-def _user_has_role(user, role_name: str, organization_id: str | None = None) -> bool:
-    for a in getattr(user, "organization_roles", []) or []:
-        if not a.role:
-            continue
-        if a.role.name == role_name:
-            if organization_id is None:
-                return True
-            if a.organization_id == organization_id:
-                return True
-    return False
-

@@ -782,7 +782,7 @@
             <q-item v-for="hist in historyList" :key="hist.id">
               <q-item-section>
                 <q-item-label>
-                  <q-badge :color="historyActionColor(hist.action)" class="q-mr-sm">{{ $t('termschedules.history_action_' + hist.action) || hist.action }}</q-badge>
+                  <q-badge :color="historyActionColor(hist.action)" class="q-mr-sm">{{ $te('termschedules.history_action_' + hist.action) ? $t('termschedules.history_action_' + hist.action) : hist.action }}</q-badge>
                   <span class="text-caption text-grey">{{ formatHistoryDate(hist.changed_at) }}</span>
                   <span v-if="hist.changed_by_name" class="text-caption q-ml-sm">– {{ hist.changed_by_name }}</span>
                 </q-item-label>
@@ -3088,9 +3088,7 @@ export default {
       this.historyDialogVisible = true
       this.historyLoading = true
       try {
-        const token = localStorage.getItem('access_token')
-        const headers = token ? { Authorization: `Bearer ${token}` } : {}
-        const resp = await axios.get(`/api/schedules/${this.scheduleId}/entries/${row.id}/history`, { headers })
+        const resp = await api.get(`schedules/${this.scheduleId}/entries/${row.id}/history`)
         this.historyList = (resp.data && resp.data.data) || []
       } catch (e) {
         console.error('Failed to load history', e)
@@ -3104,12 +3102,9 @@ export default {
       if (!this.historyEntry || !this.scheduleId) return
       this.historyReverting = true
       try {
-        const token = localStorage.getItem('access_token')
-        const headers = token ? { Authorization: `Bearer ${token}` } : {}
-        const resp = await axios.post(
-          `/api/schedules/${this.scheduleId}/entries/${this.historyEntry.id}/revert/${hist.id}`,
-          {},
-          { headers }
+        const resp = await api.post(
+          `schedules/${this.scheduleId}/entries/${this.historyEntry.id}/revert/${hist.id}`,
+          {}
         )
         const updated = resp.data && resp.data.data
         if (updated) {
