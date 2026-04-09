@@ -800,7 +800,8 @@
                   color="primary"
                   icon="restore"
                   :label="$t('termschedules.history_revert')"
-                  :loading="historyReverting"
+                  :loading="historyRevertingId === hist.id"
+                  :disable="historyRevertingId === hist.id"
                   @click="revertToHistory(hist)"
                 />
               </q-item-section>
@@ -1221,6 +1222,7 @@ export default {
           historyLoading: false,
           historyLoadError: null,
           historyReverting: false,
+          historyRevertingId: null,
     };
   },
 
@@ -3110,6 +3112,7 @@ export default {
     async revertToHistory(hist) {
       if (!this.historyEntry || !this.scheduleId) return
       this.historyReverting = true
+      this.historyRevertingId = hist.id
       try {
         const resp = await api.post(
           `schedules/${this.scheduleId}/entries/${this.historyEntry.id}/revert/${hist.id}`,
@@ -3141,6 +3144,7 @@ export default {
         this.$q.notify({ type: 'negative', message: this.$t('termschedules.history_revert_failed') })
       } finally {
         this.historyReverting = false
+        this.historyRevertingId = null
       }
     },
 

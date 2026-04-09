@@ -1,5 +1,4 @@
 import json
-import logging
 from datetime import datetime, timezone
 
 from sqlalchemy import select
@@ -7,8 +6,6 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.models import EntryHistory, ScheduleEntry
 from app.models.schedule_entry import entry_responsible, entry_devotional, entry_cant_come
-
-logger = logging.getLogger(__name__)
 
 
 def _entry_snapshot(entry: ScheduleEntry, db: Session) -> str:

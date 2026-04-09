@@ -342,8 +342,14 @@ def test_revert_by_org_admin_allowed(http_test_db):
     from app.api.routes.auth import get_current_user
 
     schedule_id, entry_id, hist_id, org_id, u_id = _seed_http_entry(http_test_db)
-    # Different user (admin) reverting someone else's change
+    # Seed a real User for the admin so changed_by_id FK is satisfied on revert
     admin_id = str(uuid.uuid4())
+    db = http_test_db()
+    try:
+        db.add(User(id=admin_id, username=f"org_admin_{admin_id[:8]}", display_name="Org Admin", hashed_password="x"))
+        db.commit()
+    finally:
+        db.close()
     user = _make_org_admin_user(admin_id, org_id)
     app.dependency_overrides[get_current_user] = lambda: user
     try:

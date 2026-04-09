@@ -202,6 +202,9 @@ def _update_entry_in_session(
         entry.responsible_users = _resolve_users(db, r_ids)
         entry.devotional_users = _resolve_users(db, d_ids)
         entry.cant_come_users = _resolve_users(db, c_ids)
+    # Flush so relationship changes are visible in the association tables
+    # before _entry_snapshot queries them.
+    db.flush()
     record_history(db, entry, action, changed_by_id)
     if commit:
         db.commit()
