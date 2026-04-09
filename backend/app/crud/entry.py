@@ -188,6 +188,7 @@ def _update_entry_in_session(
     # lists are being modified. If a list is None, use the current persisted
     # values so that simultaneous changes (e.g., adding cant_come) remove
     # users from other assignments.
+    relationships_modified = False
     if responsible_ids is not None or devotional_ids is not None or cant_come_ids is not None:
         existing_resp = [str(u.id) for u in (entry.responsible_users or [])]
         existing_devo = [str(u.id) for u in (entry.devotional_users or [])]
@@ -202,9 +203,12 @@ def _update_entry_in_session(
         entry.responsible_users = _resolve_users(db, r_ids)
         entry.devotional_users = _resolve_users(db, d_ids)
         entry.cant_come_users = _resolve_users(db, c_ids)
-    # Flush so relationship changes are visible in the association tables
-    # before _entry_snapshot queries them.
-    db.flush()
+        relationships_modified = True
+    # Flush only when relationship/association-table changes are pending so
+    # _entry_snapshot queries see the updated rows without an extra roundtrip
+    # on scalar-only updates.
+    if relationships_modified:
+        db.flush()
     record_history(db, entry, action, changed_by_id)
     if commit:
         db.commit()
