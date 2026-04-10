@@ -1,10 +1,14 @@
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
+
+logger = logging.getLogger(__name__)
 
 from app.api.routes.auth import get_current_user
 from app.core.rbac import require_org_admin_or_superadmin
 from app.core.rbac import require_superadmin
-from app.core.rbac import user_assigned_to_org, is_superadmin
+from app.core.rbac import user_assigned_to_org, is_superadmin, user_has_role
 from app.models import Schedule
 
 # TestClient-based route tests for schedules/entries bulk APIs
@@ -21,8 +25,11 @@ from app.crud import (
     get_schedule,
     list_entries,
     list_schedules,
+    revert_entry,
     update_entry,
     update_schedule,
+    get_history_entry,
+    list_entry_history,
 )
 from app.db.session import get_db
 from app.schemas.entry import EntryCreate, EntryUpdate, EntryBulkUpdate
@@ -284,6 +291,7 @@ def entries_create(
         payload.responsible_ids,
         payload.devotional_ids,
         payload.cant_come_ids,
+        changed_by_id=getattr(_user, 'id', None),
     )
     return {"data": _entry_to_dict(entry)}
 
@@ -308,10 +316,7 @@ def entries_bulk_update(
     try:
         from app.crud.entry import bulk_update_entries
         updates = [p.model_dump(exclude_unset=True) for p in payload]
-        try:
-            print(f"entries_bulk_update: received {len(updates)} updates")
-        except Exception:
-            pass
+        logger.debug("entries_bulk_update: received %d updates", len(updates))
         # Filter out client-local placeholder ids (e.g., 'local-...') which are not persisted
         filtered = []
         skipped = []
@@ -321,21 +326,16 @@ def entries_bulk_update(
                 skipped.append(eid)
                 continue
             filtered.append(u)
-        try:
-            if skipped:
-                print(f"entries_bulk_update: filtered out {len(skipped)} local placeholder ids: {skipped}")
-        except Exception:
-            pass
-        updated = bulk_update_entries(db, schedule_id, filtered)
+        if skipped:
+            logger.debug("entries_bulk_update: filtered out %d local placeholder ids: %s", len(skipped), skipped)
+        updated = bulk_update_entries(db, schedule_id, filtered, changed_by_id=getattr(_user, 'id', None))
     except ValueError as e:
         # Validation / client errors (e.g., missing id or invalid ownership) -> 400
-        import traceback
-        traceback.print_exc()
+        logger.warning("entries_bulk_update validation error for schedule %s: %s", schedule_id, e)
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except Exception as e:
         # Unexpected server error: log full traceback for debugging
-        import traceback
-        traceback.print_exc()
+        logger.exception("entries_bulk_update unexpected error for schedule %s", schedule_id)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal server error")
 
     # publish a notification to other connected clients so they can refresh
@@ -346,12 +346,12 @@ def entries_bulk_update(
         payload = {"type": "transform", "transform": transform}
         envelope = json.dumps({"__origin_pid": os.getpid(), "payload": payload})
         try:
-            print(f"entries_bulk_update: scheduling publish envelope (len={len(envelope)}) preview={envelope[:200]}")
+            logger.debug("entries_bulk_update: scheduling publish envelope (len=%d) preview=%s", len(envelope), envelope[:200])
             _pubsub.schedule_publish(envelope)
         except Exception:
-            pass
+            logger.warning("entries_bulk_update: failed to publish update for schedule %s", schedule_id, exc_info=True)
     except Exception:
-        pass
+        logger.warning("entries_bulk_update: failed to build publish payload for schedule %s", schedule_id, exc_info=True)
 
     return {"data": [_entry_to_dict(e) for e in updated]}
 
@@ -480,7 +480,7 @@ def test_entries_bulk_update_success_path_updates():
     schedule = SimpleNamespace(id="sched-2", organization_id="org-2")
     restore = _override_schedule_and_rbac(app, schedule, assigned_to_org=True, superadmin=False)
 
-    def fake_bulk_update_entries(_db, _schedule, payload):
+    def fake_bulk_update_entries(_db, _schedule, payload, changed_by_id=None):
         # Echo back payload as "updated" entries with an extra field to prove it ran.
         from types import SimpleNamespace as SN
         import datetime
@@ -546,7 +546,7 @@ def entries_bulk_create(
     try:
         from app.crud.entry import bulk_create_entries
 
-        created = bulk_create_entries(db, schedule_id, entries_data)
+        created = bulk_create_entries(db, schedule_id, entries_data, changed_by_id=getattr(_user, 'id', None))
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
@@ -557,12 +557,12 @@ def entries_bulk_create(
         payload = {"type": "transform", "transform": transform}
         envelope = json.dumps({"__origin_pid": os.getpid(), "payload": payload})
         try:
-            print(f"entries_bulk_create: scheduling publish envelope (len={len(envelope)}) preview={envelope[:200]}")
+            logger.debug("entries_bulk_create: scheduling publish envelope (len=%d) preview=%s", len(envelope), envelope[:200])
             _pubsub.schedule_publish(envelope)
         except Exception:
-            pass
+            logger.warning("entries_bulk_create: failed to publish update for schedule %s", schedule_id, exc_info=True)
     except Exception:
-        pass
+        logger.warning("entries_bulk_create: failed to build publish payload for schedule %s", schedule_id, exc_info=True)
 
     return {"data": [_entry_to_dict(e) for e in created]}
 
@@ -598,6 +598,7 @@ def entries_update(
         payload.responsible_ids,
         payload.devotional_ids,
         payload.cant_come_ids,
+        changed_by_id=getattr(_user, 'id', None),
     )
     return {"data": _entry_to_dict(entry)}
 
@@ -619,5 +620,107 @@ def entries_delete(
         if not (is_superadmin(_user) or user_assigned_to_org(_user, org)):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to delete this entry")
 
-    delete_entry(db, entry)
+    delete_entry(db, entry, changed_by_id=getattr(_user, 'id', None))
     return None
+
+
+def _history_to_dict(hist):
+    return {
+        "id": hist.id,
+        "entry_id": hist.entry_id,
+        "schedule_id": hist.schedule_id,
+        "changed_by_id": hist.changed_by_id,
+        "changed_by_name": hist.changed_by.display_name if hist.changed_by else None,
+        "changed_at": hist.changed_at.isoformat() if hist.changed_at else None,
+        "action": hist.action,
+        "snapshot": hist.snapshot,
+    }
+
+
+@router.get("/schedules/{schedule_id}/entries/{entry_id}/history")
+def entry_history_list(
+    schedule_id: str,
+    entry_id: str,
+    db: Session = Depends(get_db),
+    _user=Depends(get_current_user),
+):
+    schedule = get_schedule(db, schedule_id)
+    if not schedule:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Schedule not found")
+    org = getattr(schedule, "organization_id", None)
+    if org is None:
+        require_superadmin(_user)
+    else:
+        if not (is_superadmin(_user) or user_assigned_to_org(_user, org)):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized")
+
+    entry = get_entry(db, entry_id)
+    if not entry or entry.schedule_id != schedule_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Entry not found")
+
+    history = list_entry_history(db, entry_id)
+    return {"data": [_history_to_dict(h) for h in history]}
+
+
+@router.post("/schedules/{schedule_id}/entries/{entry_id}/revert/{history_id}", status_code=status.HTTP_200_OK)
+def entry_revert(
+    schedule_id: str,
+    entry_id: str,
+    history_id: str,
+    db: Session = Depends(get_db),
+    _user=Depends(get_current_user),
+):
+    import json as _json
+
+    schedule = get_schedule(db, schedule_id)
+    if not schedule:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Schedule not found")
+
+    org = getattr(schedule, 'organization_id', None)
+
+    # Retrieve the history record
+    hist = get_history_entry(db, history_id)
+    if not hist or hist.entry_id != entry_id or hist.schedule_id != schedule_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="History record not found")
+
+    user_id = getattr(_user, 'id', None)
+
+    # Authorization: org admin (or superadmin) can revert any change; a regular
+    # member can only revert their own changes if they still have access to the org.
+    is_admin = is_superadmin(_user) or (org is not None and user_has_role(_user, "org_admin", org))
+    has_org_access = org is not None and user_assigned_to_org(_user, org)
+    is_own_change = user_id and hist.changed_by_id and str(hist.changed_by_id) == str(user_id)
+
+    if not is_admin and not (has_org_access and is_own_change):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to revert this change",
+        )
+
+    entry = get_entry(db, entry_id)
+    if not entry:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Entry not found")
+    if entry.schedule_id != schedule_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Entry not found")
+
+    # Parse snapshot and apply
+    try:
+        snap = _json.loads(hist.snapshot)
+    except Exception:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid history snapshot")
+
+    # Apply snapshot directly so that explicit-null fields (start, end,
+    # description, notes …) are cleared rather than left unchanged.
+    entry = revert_entry(db, entry, snap, changed_by_id=user_id)
+
+    # Publish so other connected clients refresh
+    try:
+        rows_map = {schedule_id: [_entry_to_dict(entry)]}
+        transform = {"rows": rows_map}
+        pub_payload = {"type": "transform", "transform": transform}
+        envelope = json.dumps({"__origin_pid": os.getpid(), "payload": pub_payload})
+        _pubsub.schedule_publish(envelope)
+    except Exception:
+        logger.warning("revert_entry: failed to publish pubsub notification for schedule %s", schedule_id, exc_info=True)
+
+    return {"data": _entry_to_dict(entry)}

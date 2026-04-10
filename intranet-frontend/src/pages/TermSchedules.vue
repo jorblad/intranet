@@ -404,8 +404,9 @@
               />
             </q-td>
             <q-td key="actions" :props="props" class="text-center">
-              <q-btn dense flat round color="primary" icon="edit" @click.stop="openDialog(props.row)" v-if="$q.screen.lt.sm" class="q-mr-xs" />
-              <q-btn dense flat round color="negative" icon="delete" @click.stop="deleteEntryInline(props.row)" />
+              <q-btn dense flat round color="primary" icon="edit" @click.stop="openDialog(props.row)" v-if="$q.screen.lt.sm" class="q-mr-xs" :aria-label="$t('termschedules.edit')" />
+              <q-btn dense flat round color="grey" icon="history" @click.stop="openHistory(props.row)" class="q-mr-xs" :title="$t('termschedules.history')" :aria-label="$t('termschedules.history')" />
+              <q-btn dense flat round color="negative" icon="delete" @click.stop="deleteEntryInline(props.row)" :aria-label="$t('termschedules.delete')" />
             </q-td>
           </q-tr>
           </template>
@@ -465,6 +466,7 @@
                     <q-card-actions align="right">
                       <q-toggle v-model="row.public_event" dense @update:model-value="() => updateEntry(row)" :label="$t('termschedules.public')" />
                       <q-btn flat dense color="primary" icon="edit" :label="$t('termschedules.edit')" @click="openDialog(row)" />
+                      <q-btn flat dense color="grey" icon="history" :label="$t('termschedules.history')" @click="openHistory(row)" />
                       <q-btn flat dense color="negative" icon="delete" :label="$t('termschedules.delete')" @click="deleteEntryInline(row)" />
                     </q-card-actions>
                   </q-card>
@@ -757,6 +759,57 @@
           <q-btn flat label="Avbryt" color="secondary" @click="createActivityDialogVisible = false" />
           <q-space />
           <q-btn flat label="Skapa" color="primary" @click="createActivity" />
+        </q-card-actions>
+      </q-card>
+    </q-dialog>
+
+
+
+    <!-- History Dialog -->
+    <q-dialog v-model="historyDialogVisible" full-width>
+      <q-card style="min-width: 320px; max-width: 95vw;">
+        <q-card-section>
+          <div class="text-h6">{{ $t('termschedules.history_title') }}: {{ historyEntry && historyEntry.name }}</div>
+        </q-card-section>
+        <q-card-section>
+          <div v-if="historyLoading" class="text-center q-py-md">
+            <q-spinner size="2em" />
+          </div>
+          <div v-else-if="historyLoadError" class="text-negative">
+            {{ $t('termschedules.history_load_failed') }}
+          </div>
+          <div v-else-if="!historyList || historyList.length === 0" class="text-grey">
+            {{ $t('termschedules.history_empty') }}
+          </div>
+          <q-list v-else bordered separator>
+            <q-item v-for="hist in historyList" :key="hist.id">
+              <q-item-section>
+                <q-item-label>
+                  <q-badge :color="historyActionColor(hist.action)" class="q-mr-sm">{{ $te('termschedules.history_action_' + hist.action) ? $t('termschedules.history_action_' + hist.action) : hist.action }}</q-badge>
+                  <span class="text-caption text-grey">{{ formatHistoryDate(hist.changed_at) }}</span>
+                  <span v-if="hist.changed_by_name" class="text-caption q-ml-sm">– {{ hist.changed_by_name }}</span>
+                </q-item-label>
+                <q-item-label caption v-if="hist.snapshot">
+                  {{ historySnapshotSummary(hist.snapshot) }}
+                </q-item-label>
+              </q-item-section>
+              <q-item-section side>
+                <q-btn
+                  flat
+                  dense
+                  color="primary"
+                  icon="restore"
+                  :label="$t('termschedules.history_revert')"
+                  :loading="historyRevertingId === hist.id"
+                  :disable="historyRevertingId !== null"
+                  @click="revertToHistory(hist)"
+                />
+              </q-item-section>
+            </q-item>
+          </q-list>
+        </q-card-section>
+        <q-card-actions align="right">
+          <q-btn flat :label="$t('termschedules.cancel')" @click="historyDialogVisible = false" />
         </q-card-actions>
       </q-card>
     </q-dialog>
@@ -1162,6 +1215,13 @@ export default {
           noteDialogTitle: '',
           // allow expanding the detail dialog to full width per-row (opt-in)
           detailFullWidth: false,
+          // history dialog state
+          historyDialogVisible: false,
+          historyEntry: null,
+          historyList: [],
+          historyLoading: false,
+          historyLoadError: null,
+          historyRevertingId: null,
     };
   },
 
@@ -1286,18 +1346,10 @@ export default {
                 if (sid === this.scheduleId) {
                   try { console.info('orbit subscribe callback for', sid, 'rows:', Array.isArray(rows) ? rows.length : typeof rows) } catch (e) {}
                   try {
-                    const mapIdsToOptions = (ids) => {
-                      if (!Array.isArray(ids)) return []
-                      return ids.map((id) => {
-                        if (id && typeof id === 'object' && ('value' in id || 'id' in id)) return id
-                        const found = this.formattedUsers.find((u) => String(u.value) === String(id))
-                        return found || { label: String(id), value: id }
-                      })
-                    }
                     const normalized = (rows || []).map((r) => Object.assign({}, r, {
-                      responsible: mapIdsToOptions(r.responsible || r.responsible_ids || []),
-                      devotional: mapIdsToOptions(r.devotional || r.devotional_ids || []),
-                      cant_come: mapIdsToOptions(r.cant_come || r.cant_come_ids || []),
+                      responsible: this._mapIdsToOptions(r.responsible || r.responsible_ids || []),
+                      devotional: this._mapIdsToOptions(r.devotional || r.devotional_ids || []),
+                      cant_come: this._mapIdsToOptions(r.cant_come || r.cant_come_ids || []),
                     }))
                     this.rows = this.sortMethod(normalized, 'date', false)
                   } catch (e) {
@@ -1322,20 +1374,12 @@ export default {
                     const sid = d.scheduleId
                     if (sid !== this.scheduleId) return
                     const incoming = Array.isArray(d.rows) ? d.rows.slice() : []
-                    const mapIdsToOptions = (ids) => {
-                      if (!Array.isArray(ids)) return []
-                        return ids.map((id) => {
-                          if (id && typeof id === 'object' && ('value' in id || 'id' in id)) return id
-                          const found = this.formattedUsers.find((u) => String(u.value) === String(id))
-                          return found || { label: String(id), value: id }
-                        })
-                    }
                     const newRows = incoming.map((r) => {
                       try {
                         return Object.assign({}, r, {
-                          responsible: mapIdsToOptions(r.responsible || r.responsible_ids || []),
-                          devotional: mapIdsToOptions(r.devotional || r.devotional_ids || []),
-                          cant_come: mapIdsToOptions(r.cant_come || r.cant_come_ids || []),
+                          responsible: this._mapIdsToOptions(r.responsible || r.responsible_ids || []),
+                          devotional: this._mapIdsToOptions(r.devotional || r.devotional_ids || []),
+                          cant_come: this._mapIdsToOptions(r.cant_come || r.cant_come_ids || []),
                         })
                       } catch (e) { return r }
                     })
@@ -1380,6 +1424,17 @@ export default {
     },
 
   methods: {
+    // Shared helper: map an array of user IDs to Quasar-select option objects.
+    // Safe to call with Orbit data where IDs may already be option-like objects.
+    _mapIdsToOptions(ids) {
+      if (!Array.isArray(ids)) return []
+      return ids.map((id) => {
+        if (id && typeof id === 'object' && ('value' in id || 'id' in id)) return id
+        const found = this.formattedUsers.find((u) => String(u.value) === String(id))
+        return found || { label: String(id), value: id }
+      })
+    },
+
     // Display helper: prefer `start`/`end` ISO datetimes, fall back to `date`.
     displayStartEnd(row) {
       try {
@@ -1914,13 +1969,6 @@ export default {
           if (!Array.isArray(entries) || entries.length === 0) {
             try {
               const response = await api.get(`schedules/${this.scheduleId}/entries`)
-              const mapIdsToOptions = (ids) => {
-                if (!Array.isArray(ids)) return []
-                return ids.map((id) => {
-                  const found = this.formattedUsers.find((u) => u.value === id)
-                  return found || { label: String(id), value: id }
-                })
-              }
               const serverRows = response.data.data.map((entry) => ({
                 id: entry.id,
                 // preserve legacy `date` for sorting/display; provide new fields `start` and `end` as ISO datetimes
@@ -1929,9 +1977,9 @@ export default {
                 end: entry.end || (entry.date ? `${entry.date}T23:59` : null),
                 name: entry.name,
                 description: entry.description,
-                responsible: mapIdsToOptions(entry.responsible_ids),
-                devotional: mapIdsToOptions(entry.devotional_ids),
-                cant_come: mapIdsToOptions(entry.cant_come_ids),
+                responsible: this._mapIdsToOptions(entry.responsible_ids),
+                devotional: this._mapIdsToOptions(entry.devotional_ids),
+                cant_come: this._mapIdsToOptions(entry.cant_come_ids),
                 // include lastModified so Orbit merging treats server rows as authoritative
                 lastModified: entry.lastModified || entry.last_modified || Date.now(),
                 notes: entry.notes,
@@ -1945,19 +1993,11 @@ export default {
             }
           }
           // normalize any id-arrays into option-like objects so selects/chips render correctly
-          const mapIdsToOptions = (ids) => {
-            if (!Array.isArray(ids)) return []
-                return ids.map((id) => {
-                  if (id && typeof id === 'object' && ('value' in id || 'id' in id)) return id
-                  const found = this.formattedUsers.find((u) => String(u.value) === String(id))
-                  return found || { label: String(id), value: id }
-                })
-          }
           this.rows = (entries || []).map(e => ({
             ...e,
-            responsible: mapIdsToOptions(e.responsible || e.responsible_ids || []),
-            devotional: mapIdsToOptions(e.devotional || e.devotional_ids || []),
-            cant_come: mapIdsToOptions(e.cant_come || e.cant_come_ids || []),
+            responsible: this._mapIdsToOptions(e.responsible || e.responsible_ids || []),
+            devotional: this._mapIdsToOptions(e.devotional || e.devotional_ids || []),
+            cant_come: this._mapIdsToOptions(e.cant_come || e.cant_come_ids || []),
           }))
           this.rows = this.sortMethod(this.rows, 'date', false)
           return
@@ -1968,13 +2008,6 @@ export default {
       try {
         const response = await api.get(`schedules/${this.scheduleId}/entries`);
         // map server ids to option-like objects so selects and chips show friendly labels
-        const mapIdsToOptions = (ids) => {
-          if (!Array.isArray(ids)) return [];
-          return ids.map((id) => {
-            const found = this.formattedUsers.find((u) => u.value === id);
-            return found || { label: String(id), value: id };
-          });
-        };
 
         this.rows = response.data.data.map((entry) => ({
           id: entry.id,
@@ -1983,9 +2016,9 @@ export default {
           end: entry.end || (entry.date ? `${entry.date}T23:59` : null),
           name: entry.name,
           description: entry.description,
-          responsible: mapIdsToOptions(entry.responsible_ids),
-          devotional: mapIdsToOptions(entry.devotional_ids),
-          cant_come: mapIdsToOptions(entry.cant_come_ids),
+          responsible: this._mapIdsToOptions(entry.responsible_ids),
+          devotional: this._mapIdsToOptions(entry.devotional_ids),
+          cant_come: this._mapIdsToOptions(entry.cant_come_ids),
           notes: entry.notes,
           public_event: entry.public_event,
         }));
@@ -2304,18 +2337,10 @@ export default {
           await orbitSchedules.updateEntry(this.scheduleId, Object.assign({}, payload, { id: row.id }))
           try { console.debug('updateEntry(UI): after orbit update, row mapping', { id: row.id, responsible: payload.responsible_ids, devotional: payload.devotional_ids, cant_come: payload.cant_come_ids }) } catch (e) {}
           // Immediately reflect the update in the UI (avoid overwriting from server bootstrap)
-          const mapIdsToOptions = (ids) => {
-            if (!Array.isArray(ids)) return []
-            return ids.map((id) => {
-              if (id && typeof id === 'object' && ('value' in id || 'id' in id)) return id
-              const found = this.formattedUsers.find((u) => String(u.value) === String(id))
-              return found || { label: String(id), value: id }
-            })
-          }
           const updated = Object.assign({}, row, {
-            responsible: mapIdsToOptions(payload.responsible_ids),
-            devotional: mapIdsToOptions(payload.devotional_ids),
-            cant_come: mapIdsToOptions(payload.cant_come_ids),
+            responsible: this._mapIdsToOptions(payload.responsible_ids),
+            devotional: this._mapIdsToOptions(payload.devotional_ids),
+            cant_come: this._mapIdsToOptions(payload.cant_come_ids),
           })
           this.rows = this.rows.map(r => (r.id === row.id ? updated : r))
           this.rows = this.sortMethod(this.rows, 'date', false)
@@ -2896,13 +2921,6 @@ export default {
             // If using Orbit local store, refresh it with authoritative server rows
             try {
               if (USE_ORBIT && resp && resp.data && Array.isArray(resp.data.data) && orbitSchedules && typeof orbitSchedules.setLocalEntries === 'function') {
-                const mapIdsToOptions = (ids) => {
-                  if (!Array.isArray(ids)) return [];
-                  return ids.map((id) => {
-                    const found = this.formattedUsers.find((u) => u.value === id);
-                    return found || { label: String(id), value: id };
-                  });
-                };
                 const serverRows = resp.data.data.map((entry) => ({
                   id: entry.id,
                   date: entry.date,
@@ -2910,9 +2928,9 @@ export default {
                   end: entry.end || (entry.date ? `${entry.date}T23:59` : null),
                   name: entry.name,
                   description: entry.description,
-                  responsible: mapIdsToOptions(entry.responsible_ids),
-                  devotional: mapIdsToOptions(entry.devotional_ids),
-                  cant_come: mapIdsToOptions(entry.cant_come_ids),
+                  responsible: this._mapIdsToOptions(entry.responsible_ids),
+                  devotional: this._mapIdsToOptions(entry.devotional_ids),
+                  cant_come: this._mapIdsToOptions(entry.cant_come_ids),
                   // include lastModified so Orbit merging treats server rows as authoritative
                   lastModified: entry.lastModified || entry.last_modified || Date.now(),
                   notes: entry.notes,
@@ -3026,6 +3044,101 @@ export default {
     //     term: program.relationships.field_termin.data.id,
     //   }));
     // },
+
+    async openHistory(row) {
+      this.historyEntry = row
+      this.historyList = []
+      this.historyLoadError = null
+      this.historyDialogVisible = true
+      this.historyLoading = true
+      const requestedId = row.id
+      try {
+        const resp = await api.get(`schedules/${this.scheduleId}/entries/${row.id}/history`)
+        if (this.historyEntry && this.historyEntry.id === requestedId) {
+          this.historyList = (resp.data && resp.data.data) || []
+        }
+      } catch (e) {
+        if (this.historyEntry && this.historyEntry.id === requestedId) {
+          console.error('Failed to load history', e)
+          this.historyLoadError = e
+          this.$q.notify({
+            type: 'negative',
+            message: this.$t('termschedules.history_load_failed'),
+          })
+        }
+      } finally {
+        if (this.historyEntry && this.historyEntry.id === requestedId) {
+          this.historyLoading = false
+        }
+      }
+    },
+
+    async revertToHistory(hist) {
+      if (!this.historyEntry || !this.scheduleId) return
+      this.historyRevertingId = hist.id
+      try {
+        const resp = await api.post(
+          `schedules/${this.scheduleId}/entries/${this.historyEntry.id}/revert/${hist.id}`,
+          {}
+        )
+        const updated = resp.data && resp.data.data
+        if (updated) {
+          const newRow = Object.assign({}, updated, {
+            responsible: this._mapIdsToOptions(updated.responsible_ids || []),
+            devotional: this._mapIdsToOptions(updated.devotional_ids || []),
+            cant_come: this._mapIdsToOptions(updated.cant_come_ids || []),
+          })
+          this.rows = this.rows.map(r => (r.id === updated.id ? newRow : r))
+          this.rows = this.sortMethod(this.rows, 'date', false)
+          this.historyEntry = newRow
+        }
+        // Reload history list to show the new revert entry
+        await this.openHistory(this.historyEntry)
+        this.$q.notify({ type: 'positive', message: this.$t('termschedules.history_reverted') })
+      } catch (e) {
+        console.error('Failed to revert', e)
+        this.$q.notify({ type: 'negative', message: this.$t('termschedules.history_revert_failed') })
+      } finally {
+        this.historyRevertingId = null
+      }
+    },
+
+    historyActionColor(action) {
+      switch (action) {
+        case 'create': return 'positive'
+        case 'update': return 'primary'
+        case 'delete': return 'negative'
+        case 'revert': return 'warning'
+        default: return 'grey'
+      }
+    },
+
+    formatHistoryDate(isoStr) {
+      if (!isoStr) return ''
+      try {
+        return new Date(isoStr).toLocaleString()
+      } catch (e) {
+        return isoStr
+      }
+    },
+
+    historySnapshotSummary(snapshotJson) {
+      try {
+        const snap = typeof snapshotJson === 'string' ? JSON.parse(snapshotJson) : snapshotJson
+        const parts = []
+        if (snap.name) parts.push(snap.name)
+        if (snap.date) parts.push(snap.date)
+        if (Array.isArray(snap.responsible_ids) && snap.responsible_ids.length) {
+          parts.push(`${this.$t('termschedules.responsible_label')}: ${snap.responsible_ids.map(id => {
+            const u = this.formattedUsers.find(u => String(u.value) === String(id))
+            return u ? u.label : id
+          }).join(', ')}`)
+        }
+        return parts.join(' · ')
+      } catch (e) {
+        return ''
+      }
+    },
   }
 }
 

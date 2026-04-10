@@ -1,6 +1,7 @@
 from sqlalchemy.orm import Session
 
 from app.models import ScheduleEntry, User
+from app.crud.entry_history import record_history
 import logging
 
 logger = logging.getLogger(__name__)
@@ -84,6 +85,7 @@ def create_entry(
     responsible_ids: list[str],
     devotional_ids: list[str],
     cant_come_ids: list[str],
+    changed_by_id: str | None = None,
 ) -> ScheduleEntry:
     entry = ScheduleEntry(
         schedule_id=schedule_id,
@@ -101,12 +103,14 @@ def create_entry(
     entry.devotional_users = _resolve_users(db, d_ids)
     entry.cant_come_users = _resolve_users(db, c_ids)
     db.add(entry)
+    db.flush()
+    record_history(db, entry, "create", changed_by_id)
     db.commit()
     db.refresh(entry)
     return entry
 
 
-def bulk_create_entries(db: Session, schedule_id: str, entries_data: list[dict]) -> list[ScheduleEntry]:
+def bulk_create_entries(db: Session, schedule_id: str, entries_data: list[dict], changed_by_id: str | None = None) -> list[ScheduleEntry]:
     created = []
     try:
         for entry in entries_data:
@@ -133,6 +137,10 @@ def bulk_create_entries(db: Session, schedule_id: str, entries_data: list[dict])
             e_obj.responsible_users = _resolve_users(db, r_ids)
             e_obj.devotional_users = _resolve_users(db, d_ids)
             e_obj.cant_come_users = _resolve_users(db, c_ids)
+        db.flush()
+        # record history after relationships are set
+        for e_obj, _ in created:
+            record_history(db, e_obj, "create", changed_by_id)
         db.commit()
         # refresh and return
         out = []
@@ -159,6 +167,8 @@ def _update_entry_in_session(
     devotional_ids: list[str] | None,
     cant_come_ids: list[str] | None,
     commit: bool = True,
+    changed_by_id: str | None = None,
+    action: str = "update",
 ) -> ScheduleEntry:
     if date is not None:
         entry.date = date
@@ -178,6 +188,7 @@ def _update_entry_in_session(
     # lists are being modified. If a list is None, use the current persisted
     # values so that simultaneous changes (e.g., adding cant_come) remove
     # users from other assignments.
+    relationships_modified = False
     if responsible_ids is not None or devotional_ids is not None or cant_come_ids is not None:
         existing_resp = [str(u.id) for u in (entry.responsible_users or [])]
         existing_devo = [str(u.id) for u in (entry.devotional_users or [])]
@@ -192,6 +203,21 @@ def _update_entry_in_session(
         entry.responsible_users = _resolve_users(db, r_ids)
         entry.devotional_users = _resolve_users(db, d_ids)
         entry.cant_come_users = _resolve_users(db, c_ids)
+        relationships_modified = True
+    # Flush only when relationship/association-table changes are pending so
+    # _entry_snapshot queries see the updated rows without an extra roundtrip
+    # on scalar-only updates.
+    if relationships_modified:
+        db.flush()
+    # Only record history when at least one field/relationship was actually
+    # provided. This prevents empty PATCH/bulk-update calls (all-None payloads)
+    # from creating misleading no-op history rows.
+    _has_payload = (
+        any(x is not None for x in [date, start, end, name, description, notes, public_event])
+        or relationships_modified
+    )
+    if _has_payload:
+        record_history(db, entry, action, changed_by_id)
     if commit:
         db.commit()
         db.refresh(entry)
@@ -210,6 +236,8 @@ def update_entry(
     responsible_ids: list[str] | None,
     devotional_ids: list[str] | None,
     cant_come_ids: list[str] | None,
+    changed_by_id: str | None = None,
+    action: str = "update",
 ) -> ScheduleEntry:
     return _update_entry_in_session(
         db,
@@ -224,15 +252,82 @@ def update_entry(
         responsible_ids,
         devotional_ids,
         cant_come_ids,
+        changed_by_id=changed_by_id,
+        action=action,
     )
 
 
-def delete_entry(db: Session, entry: ScheduleEntry) -> None:
+def delete_entry(db: Session, entry: ScheduleEntry, changed_by_id: str | None = None) -> None:
+    record_history(db, entry, "delete", changed_by_id)
     db.delete(entry)
     db.commit()
 
 
-def bulk_update_entries(db: Session, schedule_id: str, updates: list[dict]) -> list[ScheduleEntry]:
+def revert_entry(
+    db: Session,
+    entry: ScheduleEntry,
+    snap: dict,
+    changed_by_id: str | None = None,
+) -> ScheduleEntry:
+    """Apply a history snapshot directly to an entry.
+
+    Unlike ``update_entry`` (which treats ``None`` as "leave unchanged"), this
+    function sets every scalar field to the snapshot value — including explicit
+    ``null`` — so that nullable columns are properly cleared when the snapshot
+    recorded them as null.
+    """
+    import datetime as _dt
+
+    def _parse_date(val):
+        if not val:
+            return None
+        try:
+            return _dt.date.fromisoformat(str(val))
+        except Exception:
+            return None
+
+    def _parse_datetime(val):
+        if not val:
+            return None
+        try:
+            return _dt.datetime.fromisoformat(str(val))
+        except Exception:
+            return None
+
+    # Apply all scalar fields from the snapshot, honouring explicit None.
+    if "date" in snap:
+        entry.date = _parse_date(snap["date"])
+    if "start" in snap:
+        entry.start = _parse_datetime(snap["start"])
+    if "end" in snap:
+        entry.end = _parse_datetime(snap["end"])
+    if "name" in snap:
+        entry.name = snap.get("name")
+    if "description" in snap:
+        entry.description = snap.get("description")
+    if "notes" in snap:
+        entry.notes = snap.get("notes")
+    if "public_event" in snap:
+        entry.public_event = snap.get("public_event")
+
+    # Apply relationship lists from the snapshot (always present as lists).
+    r_ids, d_ids, c_ids = _sanitize_assignment_lists(
+        snap.get("responsible_ids") or [],
+        snap.get("devotional_ids") or [],
+        snap.get("cant_come_ids") or [],
+    )
+    entry.responsible_users = _resolve_users(db, r_ids)
+    entry.devotional_users = _resolve_users(db, d_ids)
+    entry.cant_come_users = _resolve_users(db, c_ids)
+
+    db.flush()
+    record_history(db, entry, "revert", changed_by_id)
+    db.commit()
+    db.refresh(entry)
+    return entry
+
+
+def bulk_update_entries(db: Session, schedule_id: str, updates: list[dict], changed_by_id: str | None = None) -> list[ScheduleEntry]:
     """Apply multiple entry updates in a single transaction and return updated objects.
 
     Each update dict must include 'id' and any update fields.
@@ -267,6 +362,7 @@ def bulk_update_entries(db: Session, schedule_id: str, updates: list[dict]) -> l
                 u.get('devotional_ids', None),
                 u.get('cant_come_ids', None),
                 commit=False,
+                changed_by_id=changed_by_id,
             )
             updated.append(entry)
         db.commit()
