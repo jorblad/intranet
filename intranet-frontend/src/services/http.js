@@ -82,6 +82,9 @@ export function setupInterceptors({ refreshEndpoint = '/oauth/token' } = {}) {
               localStorage.removeItem('access_token')
               localStorage.removeItem('refresh_token')
             } catch (e) {}
+            // Reject all subscribers waiting on this refresh so their pending
+            // promises settle immediately instead of hanging forever.
+            onRefreshed(null)
             if (typeof window !== 'undefined') {
               try {
                 const location = window.location || {}

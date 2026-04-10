@@ -1,5 +1,4 @@
 import Login from 'pages/LoginPage.vue'; // Import your Login component
-import { fetchCurrentUser, useAuth } from 'src/services/auth'
 
 const routes = [
   {

@@ -145,14 +145,14 @@ export default {
     },
     async login() {
       try {
-        const formData = new FormData()
-        formData.append('username', this.username)
-        formData.append('password', this.password)
-        formData.append('grant_type', 'password')
-        formData.append('client_id', 'frontend')
+        const params = new URLSearchParams()
+        params.append('username', this.username)
+        params.append('password', this.password)
+        params.append('grant_type', 'password')
+        params.append('client_id', 'frontend')
 
-        const response = await axios.post('/oauth/token', formData, {
-          headers: { 'Content-Type': 'multipart/form-data' },
+        const response = await axios.post('/oauth/token', params, {
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         })
         const access_token = response.data.access_token
         const refresh_token = response.data.refresh_token
