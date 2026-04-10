@@ -103,19 +103,15 @@ export default {
     language: 'Language',
     save: 'Save',
     reset: 'Reset',
-    updated: 'Profile updated'
-  },
-  profile: {
+    updated: 'Profile updated',
     calendar_links: 'Calendar links',
     regenerate_token: 'Regenerate token',
     token_regenerated: 'Token regenerated',
-    link_copied: 'Link copied'
-    ,
+    link_copied: 'Link copied',
     personal_calendar_label: 'Personal calendar (shareable)',
     calendar_id_label: 'Calendar ID',
     copy_personal_calendar: 'Copy personal calendar link',
-    copy_calendar_id: 'Copy calendar ID'
-    ,
+    copy_calendar_id: 'Copy calendar ID',
     personal_calendar_activities: 'Activities included in personal calendar',
     personal_calendar_activities_hint: 'Select activities to include in the shareable personal calendar URL (optional)'
   },

@@ -40,7 +40,11 @@ export function setupInterceptors({ refreshEndpoint = '/oauth/token' } = {}) {
       if (!originalRequest) return Promise.reject(error)
 
       // if already tried refresh for this request, reject
-      if (error.response && error.response.status === 401 && !originalRequest._retry) {
+      // Also skip the retry logic if the failing request IS the refresh endpoint itself,
+      // so the rejection propagates to refreshPromise's .catch() instead of deadlocking.
+      const requestUrl = String(originalRequest.url || '')
+      const isRefreshRequest = requestUrl === refreshEndpoint || requestUrl.endsWith(refreshEndpoint)
+      if (error.response && error.response.status === 401 && !originalRequest._retry && !isRefreshRequest) {
         originalRequest._retry = true
         const refreshToken = localStorage.getItem('refresh_token')
         if (!refreshToken) {
@@ -74,6 +78,11 @@ export function setupInterceptors({ refreshEndpoint = '/oauth/token' } = {}) {
             if (data.refresh_token) {
               localStorage.setItem('refresh_token', data.refresh_token)
             }
+            // Reset state before notifying so that any 401 arriving during
+            // subscriber callbacks starts a fresh refresh cycle rather than
+            // adding to a stale subscriber list.
+            isRefreshing = false
+            refreshPromise = null
             onRefreshed(data.access_token)
             return data
           }).catch(err => {
@@ -82,6 +91,12 @@ export function setupInterceptors({ refreshEndpoint = '/oauth/token' } = {}) {
               localStorage.removeItem('access_token')
               localStorage.removeItem('refresh_token')
             } catch (e) {}
+            // Reset state before notifying subscribers so that no new 401
+            // handler can see isRefreshing===true and subscribe after the list
+            // has already been drained, which would leave it hanging forever.
+            isRefreshing = false
+            refreshPromise = null
+            onRefreshed(null)
             if (typeof window !== 'undefined') {
               try {
                 const location = window.location || {}
@@ -93,9 +108,6 @@ export function setupInterceptors({ refreshEndpoint = '/oauth/token' } = {}) {
               } catch (e) {}
             }
             throw err
-          }).finally(() => {
-            isRefreshing = false
-            refreshPromise = null
           })
         }
 
