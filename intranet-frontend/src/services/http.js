@@ -40,7 +40,11 @@ export function setupInterceptors({ refreshEndpoint = '/oauth/token' } = {}) {
       if (!originalRequest) return Promise.reject(error)
 
       // if already tried refresh for this request, reject
-      if (error.response && error.response.status === 401 && !originalRequest._retry) {
+      // Also skip the retry logic if the failing request IS the refresh endpoint itself,
+      // so the rejection propagates to refreshPromise's .catch() instead of deadlocking.
+      const requestUrl = String(originalRequest.url || '')
+      const isRefreshRequest = requestUrl === refreshEndpoint || requestUrl.endsWith(refreshEndpoint)
+      if (error.response && error.response.status === 401 && !originalRequest._retry && !isRefreshRequest) {
         originalRequest._retry = true
         const refreshToken = localStorage.getItem('refresh_token')
         if (!refreshToken) {
