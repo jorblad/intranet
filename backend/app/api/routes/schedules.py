@@ -647,8 +647,11 @@ def entry_history_list(
     schedule = get_schedule(db, schedule_id)
     if not schedule:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Schedule not found")
-    if getattr(schedule, 'organization_id', None):
-        if not (is_superadmin(_user) or user_assigned_to_org(_user, schedule.organization_id)):
+    org = getattr(schedule, "organization_id", None)
+    if org is None:
+        require_superadmin(_user)
+    else:
+        if not (is_superadmin(_user) or user_assigned_to_org(_user, org)):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized")
 
     entry = get_entry(db, entry_id)
