@@ -346,12 +346,12 @@ def entries_bulk_update(
         payload = {"type": "transform", "transform": transform}
         envelope = json.dumps({"__origin_pid": os.getpid(), "payload": payload})
         try:
-            print(f"entries_bulk_update: scheduling publish envelope (len={len(envelope)}) preview={envelope[:200]}")
+            logger.debug("entries_bulk_update: scheduling publish envelope (len=%d) preview=%s", len(envelope), envelope[:200])
             _pubsub.schedule_publish(envelope)
         except Exception:
-            pass
+            logger.warning("entries_bulk_update: failed to publish update for schedule %s", schedule_id, exc_info=True)
     except Exception:
-        pass
+        logger.warning("entries_bulk_update: failed to build publish payload for schedule %s", schedule_id, exc_info=True)
 
     return {"data": [_entry_to_dict(e) for e in updated]}
 
@@ -557,12 +557,12 @@ def entries_bulk_create(
         payload = {"type": "transform", "transform": transform}
         envelope = json.dumps({"__origin_pid": os.getpid(), "payload": payload})
         try:
-            print(f"entries_bulk_create: scheduling publish envelope (len={len(envelope)}) preview={envelope[:200]}")
+            logger.debug("entries_bulk_create: scheduling publish envelope (len=%d) preview=%s", len(envelope), envelope[:200])
             _pubsub.schedule_publish(envelope)
         except Exception:
-            pass
+            logger.warning("entries_bulk_create: failed to publish update for schedule %s", schedule_id, exc_info=True)
     except Exception:
-        pass
+        logger.warning("entries_bulk_create: failed to build publish payload for schedule %s", schedule_id, exc_info=True)
 
     return {"data": [_entry_to_dict(e) for e in created]}
 
