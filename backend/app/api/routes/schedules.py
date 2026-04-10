@@ -1,5 +1,9 @@
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
+
+logger = logging.getLogger(__name__)
 
 from app.api.routes.auth import get_current_user
 from app.core.rbac import require_org_admin_or_superadmin
@@ -312,10 +316,7 @@ def entries_bulk_update(
     try:
         from app.crud.entry import bulk_update_entries
         updates = [p.model_dump(exclude_unset=True) for p in payload]
-        try:
-            print(f"entries_bulk_update: received {len(updates)} updates")
-        except Exception:
-            pass
+        logger.debug("entries_bulk_update: received %d updates", len(updates))
         # Filter out client-local placeholder ids (e.g., 'local-...') which are not persisted
         filtered = []
         skipped = []
@@ -325,21 +326,16 @@ def entries_bulk_update(
                 skipped.append(eid)
                 continue
             filtered.append(u)
-        try:
-            if skipped:
-                print(f"entries_bulk_update: filtered out {len(skipped)} local placeholder ids: {skipped}")
-        except Exception:
-            pass
+        if skipped:
+            logger.debug("entries_bulk_update: filtered out %d local placeholder ids: %s", len(skipped), skipped)
         updated = bulk_update_entries(db, schedule_id, filtered, changed_by_id=getattr(_user, 'id', None))
     except ValueError as e:
         # Validation / client errors (e.g., missing id or invalid ownership) -> 400
-        import traceback
-        traceback.print_exc()
+        logger.warning("entries_bulk_update validation error for schedule %s: %s", schedule_id, e)
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except Exception as e:
         # Unexpected server error: log full traceback for debugging
-        import traceback
-        traceback.print_exc()
+        logger.exception("entries_bulk_update unexpected error for schedule %s", schedule_id)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal server error")
 
     # publish a notification to other connected clients so they can refresh
@@ -722,6 +718,6 @@ def entry_revert(
         envelope = json.dumps({"__origin_pid": os.getpid(), "payload": pub_payload})
         _pubsub.schedule_publish(envelope)
     except Exception:
-        pass
+        logger.warning("revert_entry: failed to publish pubsub notification for schedule %s", schedule_id, exc_info=True)
 
     return {"data": _entry_to_dict(entry)}
