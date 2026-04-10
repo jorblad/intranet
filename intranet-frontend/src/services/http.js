@@ -78,6 +78,11 @@ export function setupInterceptors({ refreshEndpoint = '/oauth/token' } = {}) {
             if (data.refresh_token) {
               localStorage.setItem('refresh_token', data.refresh_token)
             }
+            // Reset state before notifying so that any 401 arriving during
+            // subscriber callbacks starts a fresh refresh cycle rather than
+            // adding to a stale subscriber list.
+            isRefreshing = false
+            refreshPromise = null
             onRefreshed(data.access_token)
             return data
           }).catch(err => {
@@ -86,8 +91,11 @@ export function setupInterceptors({ refreshEndpoint = '/oauth/token' } = {}) {
               localStorage.removeItem('access_token')
               localStorage.removeItem('refresh_token')
             } catch (e) {}
-            // Reject all subscribers waiting on this refresh so their pending
-            // promises settle immediately instead of hanging forever.
+            // Reset state before notifying subscribers so that no new 401
+            // handler can see isRefreshing===true and subscribe after the list
+            // has already been drained, which would leave it hanging forever.
+            isRefreshing = false
+            refreshPromise = null
             onRefreshed(null)
             if (typeof window !== 'undefined') {
               try {
@@ -100,9 +108,6 @@ export function setupInterceptors({ refreshEndpoint = '/oauth/token' } = {}) {
               } catch (e) {}
             }
             throw err
-          }).finally(() => {
-            isRefreshing = false
-            refreshPromise = null
           })
         }
 
