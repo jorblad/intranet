@@ -76,10 +76,13 @@ describe('renderToHtml', () => {
     expect(await renderToHtml('')).toBe('')
   })
 
-  it('renders plain text without XSS', async () => {
+  it('renders plain text preserving content', async () => {
     const result = await renderToHtml('Hello world')
     expect(result).toContain('Hello world')
-    // Must not contain unescaped angle brackets from input
+  })
+
+  it('escapes inline XSS payload in plain text', async () => {
+    const result = await renderToHtml('Hello <script>alert(1)</script> world')
     expect(result).not.toContain('<script>')
   })
 
