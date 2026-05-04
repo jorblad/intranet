@@ -50,20 +50,20 @@ describe('sanitizeUrl', () => {
     expect(sanitizeUrl('vbscript:msgbox(1)')).toBe('')
   })
 
-  it('escapes double quotes in safe URLs', () => {
+  it('preserves double quotes in safe URLs', () => {
     expect(sanitizeUrl('https://example.com?q="test"')).toBe(
-      'https://example.com?q=&quot;test&quot;'
+      'https://example.com?q="test"'
     )
   })
 
-  it('escapes single quotes in safe URLs', () => {
+  it('preserves single quotes in safe URLs', () => {
     expect(sanitizeUrl("https://example.com?q='test'")).toBe(
-      'https://example.com?q=&#39;test&#39;'
+      "https://example.com?q='test'"
     )
   })
 
-  it('escapes double quotes in root-relative paths', () => {
-    expect(sanitizeUrl('/path?q="val"')).toBe('/path?q=&quot;val&quot;')
+  it('preserves double quotes in root-relative paths', () => {
+    expect(sanitizeUrl('/path?q="val"')).toBe('/path?q="val"')
   })
 })
 
