@@ -34,6 +34,10 @@ describe('sanitizeUrl', () => {
     expect(sanitizeUrl('/path/to/page')).toBe('/path/to/page')
   })
 
+  it('blocks protocol-relative URLs', () => {
+    expect(sanitizeUrl('//evil.com')).toBe('')
+  })
+
   it('blocks javascript: URLs', () => {
     expect(sanitizeUrl('javascript:alert(1)')).toBe('')
   })
@@ -81,7 +85,7 @@ describe('renderToHtml', () => {
     expect(result).toContain('Hello world')
   })
 
-  it('escapes inline XSS payload in plain text', async () => {
+  it('strips inline XSS payload in plain text', async () => {
     const result = await renderToHtml('Hello <script>alert(1)</script> world')
     expect(result).not.toContain('<script>')
   })

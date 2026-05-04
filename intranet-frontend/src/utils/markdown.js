@@ -14,7 +14,7 @@ export function sanitizeUrl (url) {
   try {
     if (!url) return ''
     const trimmed = String(url).trim()
-    if (trimmed.startsWith('#') || trimmed.startsWith('/')) {
+    if (trimmed.startsWith('#') || (trimmed.startsWith('/') && !trimmed.startsWith('//'))) {
       return trimmed.replace(/"/g, '&quot;').replace(/'/g, '&#39;')
     }
     if (SAFE_URL_PATTERN.test(trimmed)) {
