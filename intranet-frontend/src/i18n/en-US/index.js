@@ -7,13 +7,10 @@ export default {
   adminPermissions: {
     codename: 'Codename',
     description: 'Description',
-    create: 'Create',
     search: 'Search permissions',
     no_permissions: 'No permissions',
     load_failed: 'Failed to load permissions',
     codename_empty: 'Codename cannot be empty',
-    created: 'Permission created',
-    create_failed: 'Failed to create permission',
     updated: 'Permission updated',
     update_failed: 'Failed to update permission',
     deleted: 'Permission deleted',

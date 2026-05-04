@@ -11,7 +11,6 @@ from app.schemas.rbac import (
     RoleCreate,
     RoleUpdate,
     RoleOut,
-    PermissionCreate,
     PermissionUpdate,
     PermissionOut,
     AssignmentCreate,
@@ -151,13 +150,6 @@ def roles_delete(role_id: str, db: Session = Depends(get_db), _user=Depends(get_
 def permissions_index(db: Session = Depends(get_db), _user=Depends(get_current_user)):
     perms = list_permissions(db)
     return [PermissionOut(id=p.id, codename=p.codename, description=p.description) for p in perms]
-
-
-@router.post("/rbac/permissions", status_code=status.HTTP_201_CREATED)
-def permissions_create(payload: PermissionCreate, db: Session = Depends(get_db), _user=Depends(get_current_user)):
-    require_superadmin(_user)
-    perm = create_permission(db, payload.codename, payload.description)
-    return PermissionOut(id=perm.id, codename=perm.codename, description=perm.description)
 
 
 @router.get("/rbac/permissions/{permission_id}")
