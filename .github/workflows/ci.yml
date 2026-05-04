@@ -44,10 +44,28 @@ jobs:
           # Run tests quietly; PYTHONPATH is set at job-level so imports resolve
           pytest -q
 
+  frontend-tests:
+    name: Frontend tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: intranet-frontend/package-lock.json
+      - name: Install frontend dependencies
+        working-directory: ./intranet-frontend
+        run: npm ci
+      - name: Run frontend tests
+        working-directory: ./intranet-frontend
+        run: npm test -- --run
+
   frontend-build:
     name: Frontend build
     runs-on: ubuntu-latest
-    needs: backend-tests
+    needs: [backend-tests, frontend-tests]
     steps:
       - uses: actions/checkout@v6
       - name: Setup Node
