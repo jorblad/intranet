@@ -25,6 +25,15 @@ from app.models import (
 
 logger = logging.getLogger(__name__)
 
+# Standard permissions seeded on every fresh install so the role editor works
+# out-of-the-box without requiring manual permission creation.
+DEFAULT_PERMISSIONS = [
+    ("activity.read", "Read access to activities"),
+    ("activity.write", "Write access to activities"),
+    ("schedule.read", "Read access to schedules"),
+    ("schedule.write", "Write access to schedules"),
+]
+
 
 def init_db() -> None:
     # Wait for the database to be available (useful in Docker dev where DB may start after backend)
@@ -282,34 +291,33 @@ def init_db() -> None:
             logger.exception("Failed to ensure default roles during DB init; startup will continue.")
 
         # Ensure standard permissions exist so the role editor works on a fresh install.
-        default_permissions = [
-            ("activity.read", "Read access to activities"),
-            ("activity.write", "Write access to activities"),
-            ("schedule.read", "Read access to schedules"),
-            ("schedule.write", "Write access to schedules"),
-        ]
         try:
             with db.begin_nested():
-                for codename, description in default_permissions:
+                for codename, description in DEFAULT_PERMISSIONS:
                     p = db.query(Permission).filter(Permission.codename == codename).first()
                     if not p:
                         db.add(Permission(codename=codename, description=description))
                 db.flush()
         except sa_exc.IntegrityError:
             # Concurrent init may have inserted permissions — retry any still missing.
+            # The failed begin_nested() already rolled back the savepoint; the outer
+            # transaction is still intact.
             try:
                 with db.begin_nested():
-                    for codename, description in default_permissions:
+                    for codename, description in DEFAULT_PERMISSIONS:
                         if not db.query(Permission).filter(Permission.codename == codename).first():
                             db.add(Permission(codename=codename, description=description))
                     db.flush()
             except Exception:
-                db.rollback()
+                # begin_nested() auto-rolls back its savepoint on exception; do not
+                # call db.rollback() here as that would abort the whole outer
+                # transaction and undo the role inserts committed just above.
                 logger.exception(
                     "Failed to ensure default permissions during DB init (retry); startup will continue."
                 )
         except Exception:
-            db.rollback()
+            # begin_nested() auto-rolls back its savepoint on exception; do not call
+            # db.rollback() here as that would abort the whole outer transaction.
             logger.exception("Failed to ensure default permissions during DB init; startup will continue.")
 
         db.commit()

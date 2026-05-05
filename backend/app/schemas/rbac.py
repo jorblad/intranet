@@ -46,6 +46,10 @@ class PermissionBase(BaseModel):
     description: Optional[str] = None
 
 
+class PermissionCreate(PermissionBase):
+    pass
+
+
 class PermissionUpdate(BaseModel):
     codename: Optional[str] = None
     description: Optional[str] = None
