@@ -281,6 +281,37 @@ def init_db() -> None:
             db.rollback()
             logger.exception("Failed to ensure default roles during DB init; startup will continue.")
 
+        # Ensure standard permissions exist so the role editor works on a fresh install.
+        default_permissions = [
+            ("activity.read", "Read access to activities"),
+            ("activity.write", "Write access to activities"),
+            ("schedule.read", "Read access to schedules"),
+            ("schedule.write", "Write access to schedules"),
+        ]
+        try:
+            with db.begin_nested():
+                for codename, description in default_permissions:
+                    p = db.query(Permission).filter(Permission.codename == codename).first()
+                    if not p:
+                        db.add(Permission(codename=codename, description=description))
+                db.flush()
+        except sa_exc.IntegrityError:
+            # Concurrent init may have inserted permissions — retry any still missing.
+            try:
+                with db.begin_nested():
+                    for codename, description in default_permissions:
+                        if not db.query(Permission).filter(Permission.codename == codename).first():
+                            db.add(Permission(codename=codename, description=description))
+                    db.flush()
+            except Exception:
+                db.rollback()
+                logger.exception(
+                    "Failed to ensure default permissions during DB init (retry); startup will continue."
+                )
+        except Exception:
+            db.rollback()
+            logger.exception("Failed to ensure default permissions during DB init; startup will continue.")
+
         db.commit()
     finally:
         db.close()
