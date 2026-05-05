@@ -133,11 +133,12 @@ def init_db() -> None:
         # Commit core seeding (e.g., admin user creation) before best-effort role seeding
         db.commit()
 
-        # Track whether any role was freshly inserted by this init_db() invocation.
-        # Only a fresh install (where no roles existed before) should trigger
-        # permission seeding below; a restart where an admin deleted all permissions
-        # must NOT re-seed them.
-        roles_were_created = False
+        # Snapshot whether any roles existed before this invocation starts inserting
+        # default roles. This is the canonical "previously initialised" signal: if even
+        # one role row exists we know init_db() has run before, so permissions must never
+        # be re-seeded (even if an admin subsequently deleted them all). Only a completely
+        # fresh database (zero roles) should trigger permission seeding below.
+        roles_existed_before = db.query(Role).count() > 0
 
         # Ensure a global `superadmin` role exists and, on a fresh DB, assign it to
         # the newly created admin user. Avoid granting superadmin to an arbitrary
@@ -153,7 +154,6 @@ def init_db() -> None:
                 try:
                     db.add(super_role)
                     db.flush()
-                    roles_were_created = True
                 except sa_exc.IntegrityError:
                     # Another concurrent initializer may have created the superadmin
                     # role after our initial existence check but before this flush.
@@ -263,7 +263,6 @@ def init_db() -> None:
                     if not r:
                         r = Role(name=name, description=desc, is_global=is_global)
                         db.add(r)
-                        roles_were_created = True
                 db.flush()
         except sa_exc.IntegrityError:
             # Concurrent init may have inserted roles — the nested transaction has
@@ -274,7 +273,6 @@ def init_db() -> None:
                         existing_role = db.query(Role).filter(Role.name == name).first()
                         if not existing_role:
                             db.add(Role(name=name, description=desc, is_global=is_global))
-                            roles_were_created = True
                     db.flush()
             except sa_exc.IntegrityError:
                 # Another concurrent initializer may still be racing. Log the failure of
@@ -299,11 +297,11 @@ def init_db() -> None:
             db.rollback()
             logger.exception("Failed to ensure default roles during DB init; startup will continue.")
 
-        # Seed standard permissions only on a truly fresh install — one where this
-        # invocation of init_db() also had to create the default roles. If roles
-        # already existed before this run, the database was previously initialised
-        # and we must not reseed permissions, even if an admin deleted them all.
-        if roles_were_created and db.query(Permission).count() == 0:
+        # Seed standard permissions only on a truly fresh install — one where no roles
+        # existed when this init_db() invocation started. If any role already existed,
+        # the database was previously initialised and we must not reseed permissions,
+        # even if an admin subsequently deleted them all.
+        if not roles_existed_before and db.query(Permission).count() == 0:
             try:
                 with db.begin_nested():
                     for codename, description in DEFAULT_PERMISSIONS:

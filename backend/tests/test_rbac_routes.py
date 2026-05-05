@@ -169,10 +169,70 @@ def test_init_db_does_not_reseed_permissions_after_admin_deletes_all():
         init_db_module.SessionLocal = original_session_local
         init_db_module.engine = original_engine
 
+def test_init_db_does_not_reseed_permissions_after_admin_deletes_role_and_permissions():
+    """init_db() must not reseed permissions when a role was re-created on restart.
 
-# ---------------------------------------------------------------------------
-# POST /rbac/permissions — request-level tests
-# ---------------------------------------------------------------------------
+    Scenario: init_db() ran once (fresh install → roles + permissions seeded),
+    then an admin deleted a default role (e.g. 'member') AND all permissions.
+    On the next startup init_db() will re-insert the missing 'member' role, but
+    must still leave the permissions table empty.
+    """
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from sqlalchemy.pool import StaticPool
+
+    import app.db.init_db as init_db_module
+    from app.db.base import Base
+    from app.models import Permission, Role
+
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    TestingSessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+    Base.metadata.create_all(bind=engine)
+
+    original_session_local = init_db_module.SessionLocal
+    original_engine = init_db_module.engine
+    init_db_module.SessionLocal = TestingSessionLocal
+    init_db_module.engine = engine
+
+    try:
+        # First run: fresh install seeds roles + permissions
+        init_db_module.init_db()
+
+        # Admin deletes the 'member' role and all permissions
+        db = TestingSessionLocal()
+        try:
+            db.query(Permission).delete()
+            db.query(Role).filter(Role.name == "member").delete()
+            db.commit()
+            assert db.query(Permission).count() == 0, "Setup: all permissions should be deleted"
+            assert db.query(Role).filter(Role.name == "member").first() is None, (
+                "Setup: 'member' role should be deleted"
+            )
+        finally:
+            db.close()
+
+        # Second run: restart re-creates 'member' role but must NOT reseed permissions
+        init_db_module.init_db()
+
+        db = TestingSessionLocal()
+        try:
+            perm_count = db.query(Permission).count()
+            assert perm_count == 0, (
+                f"init_db() must not reseed permissions when a missing role is re-created; "
+                f"found {perm_count} permission(s)"
+            )
+        finally:
+            db.close()
+    finally:
+        init_db_module.SessionLocal = original_session_local
+        init_db_module.engine = original_engine
+
+
+
 
 def test_create_permission_as_superadmin(perm_client, perm_test_db, superadmin_override):
     """Superadmin can create a new permission via POST /rbac/permissions."""
