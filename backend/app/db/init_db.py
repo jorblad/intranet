@@ -133,12 +133,22 @@ def init_db() -> None:
         # Commit core seeding (e.g., admin user creation) before best-effort role seeding
         db.commit()
 
-        # Snapshot whether any roles existed before this invocation starts inserting
-        # default roles. This is the canonical "previously initialised" signal: if even
-        # one role row exists we know init_db() has run before, so permissions must never
-        # be re-seeded (even if an admin subsequently deleted them all). Only a completely
-        # fresh database (zero roles) should trigger permission seeding below.
-        roles_existed_before = db.query(Role).count() > 0
+        # Determine whether this database had already been initialised before this
+        # invocation started inserting default RBAC data. Do not rely on `Role`
+        # existence alone: an admin can delete every role and permission after a prior
+        # startup, and that must not make a later restart look like a fresh install.
+        #
+        # `had_existing_users` is captured before any admin creation in this function,
+        # so it remains a durable signal that the database was already in use. Keep the
+        # existing RBAC-table checks as additional signals for partially initialised DBs.
+        previously_initialized = (
+            had_existing_users is True
+            or db.query(Role.id).first() is not None
+            or db.query(Permission.id).first() is not None
+            or db.query(RolePermission.role_id).first() is not None
+            or db.query(UserOrganizationRole.user_id).first() is not None
+        )
+        roles_existed_before = previously_initialized
 
         # Ensure a global `superadmin` role exists and, on a fresh DB, assign it to
         # the newly created admin user. Avoid granting superadmin to an arbitrary
