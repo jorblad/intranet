@@ -1,7 +1,71 @@
 import pytest
+from types import SimpleNamespace
+
+from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 
 from app.main import app
+from app.db.base import Base
+from app.db.session import get_db
+from app.api.routes.auth import get_current_user
 
+
+# ---------------------------------------------------------------------------
+# Shared fixtures for request-level permission tests
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def perm_test_db():
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    TestingSessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
+    Base.metadata.create_all(bind=engine)
+
+    def _get_db():
+        db = TestingSessionLocal()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    app.dependency_overrides[get_db] = _get_db
+    yield TestingSessionLocal
+    app.dependency_overrides.pop(get_db, None)
+
+
+@pytest.fixture
+def perm_client(perm_test_db):
+    return TestClient(app)
+
+
+@pytest.fixture
+def superadmin_override():
+    user = SimpleNamespace(
+        organization_roles=[
+            SimpleNamespace(role=SimpleNamespace(name="superadmin", is_global=True))
+        ]
+    )
+    app.dependency_overrides[get_current_user] = lambda: user
+    yield
+    app.dependency_overrides.pop(get_current_user, None)
+
+
+@pytest.fixture
+def regular_user_override():
+    user = SimpleNamespace(organization_roles=[])
+    app.dependency_overrides[get_current_user] = lambda: user
+    yield
+    app.dependency_overrides.pop(get_current_user, None)
+
+
+# ---------------------------------------------------------------------------
+# Existing tests
+# ---------------------------------------------------------------------------
 
 def test_apply_program_preset_route_exists():
     paths = [r.path for r in app.router.routes]
@@ -46,3 +110,29 @@ def test_init_db_seeds_default_permissions():
     finally:
         init_db_module.SessionLocal = original_session_local
         init_db_module.engine = original_engine
+
+
+# ---------------------------------------------------------------------------
+# POST /rbac/permissions — request-level tests
+# ---------------------------------------------------------------------------
+
+def test_create_permission_as_superadmin(perm_client, perm_test_db, superadmin_override):
+    """Superadmin can create a new permission via POST /rbac/permissions."""
+    res = perm_client.post(
+        "/api/rbac/permissions",
+        json={"codename": "custom.action", "description": "A custom permission"},
+    )
+    assert res.status_code == 201, res.text
+    data = res.json()
+    assert data["codename"] == "custom.action"
+    assert data["description"] == "A custom permission"
+    assert "id" in data
+
+
+def test_create_permission_requires_superadmin(perm_client, perm_test_db, regular_user_override):
+    """Non-superadmin user must receive 403 when attempting to create a permission."""
+    res = perm_client.post(
+        "/api/rbac/permissions",
+        json={"codename": "should.fail", "description": "Should not be created"},
+    )
+    assert res.status_code == 403, res.text

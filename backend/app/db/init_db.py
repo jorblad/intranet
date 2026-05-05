@@ -290,35 +290,24 @@ def init_db() -> None:
             db.rollback()
             logger.exception("Failed to ensure default roles during DB init; startup will continue.")
 
-        # Ensure standard permissions exist so the role editor works on a fresh install.
-        try:
-            with db.begin_nested():
-                for codename, description in DEFAULT_PERMISSIONS:
-                    p = db.query(Permission).filter(Permission.codename == codename).first()
-                    if not p:
-                        db.add(Permission(codename=codename, description=description))
-                db.flush()
-        except sa_exc.IntegrityError:
-            # Concurrent init may have inserted permissions — retry any still missing.
-            # The failed begin_nested() already rolled back the savepoint; the outer
-            # transaction is still intact.
+        # Seed standard permissions only on a completely fresh install (empty table).
+        # Checking for an empty table avoids resurrecting permissions that an admin
+        # intentionally deleted or renamed on a previously-initialised database.
+        if db.query(Permission).count() == 0:
             try:
                 with db.begin_nested():
                     for codename, description in DEFAULT_PERMISSIONS:
-                        if not db.query(Permission).filter(Permission.codename == codename).first():
-                            db.add(Permission(codename=codename, description=description))
+                        db.add(Permission(codename=codename, description=description))
                     db.flush()
-            except Exception:
-                # begin_nested() auto-rolls back its savepoint on exception; do not
-                # call db.rollback() here as that would abort the whole outer
-                # transaction and undo the role inserts committed just above.
-                logger.exception(
-                    "Failed to ensure default permissions during DB init (retry); startup will continue."
+            except sa_exc.IntegrityError:
+                # A concurrent init beat us to it; savepoint is already rolled back.
+                logger.warning(
+                    "Default permissions already seeded by a concurrent init; skipping."
                 )
-        except Exception:
-            # begin_nested() auto-rolls back its savepoint on exception; do not call
-            # db.rollback() here as that would abort the whole outer transaction.
-            logger.exception("Failed to ensure default permissions during DB init; startup will continue.")
+            except Exception:
+                # begin_nested() auto-rolls back its savepoint on exception; do not call
+                # db.rollback() here as that would abort the whole outer transaction.
+                logger.exception("Failed to seed default permissions during DB init; startup will continue.")
 
         db.commit()
     finally:
