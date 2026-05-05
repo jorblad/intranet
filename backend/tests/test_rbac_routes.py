@@ -112,6 +112,64 @@ def test_init_db_seeds_default_permissions():
         init_db_module.engine = original_engine
 
 
+def test_init_db_does_not_reseed_permissions_after_admin_deletes_all():
+    """init_db() must not resurrect permissions on a restart if an admin deleted them all.
+
+    Scenario: init_db() ran once (fresh install → roles + permissions seeded),
+    then an admin deleted every Permission row.  On the next startup init_db()
+    must leave the permissions table empty.
+    """
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from sqlalchemy.pool import StaticPool
+
+    import app.db.init_db as init_db_module
+    from app.db.base import Base
+    from app.models import Permission
+
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    TestingSessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+    Base.metadata.create_all(bind=engine)
+
+    original_session_local = init_db_module.SessionLocal
+    original_engine = init_db_module.engine
+    init_db_module.SessionLocal = TestingSessionLocal
+    init_db_module.engine = engine
+
+    try:
+        # First run: fresh install seeds roles + permissions
+        init_db_module.init_db()
+
+        # Simulate admin deleting all permissions
+        db = TestingSessionLocal()
+        try:
+            db.query(Permission).delete()
+            db.commit()
+            assert db.query(Permission).count() == 0, "Setup: all permissions should be deleted"
+        finally:
+            db.close()
+
+        # Second run: restart — permissions must NOT be reseeded
+        init_db_module.init_db()
+
+        db = TestingSessionLocal()
+        try:
+            count = db.query(Permission).count()
+            assert count == 0, (
+                f"init_db() must not reseed permissions on restart after admin deleted them; "
+                f"found {count} permission(s)"
+            )
+        finally:
+            db.close()
+    finally:
+        init_db_module.SessionLocal = original_session_local
+        init_db_module.engine = original_engine
+
+
 # ---------------------------------------------------------------------------
 # POST /rbac/permissions — request-level tests
 # ---------------------------------------------------------------------------
