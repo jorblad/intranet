@@ -1,5 +1,6 @@
 """Thorough RBAC tests covering core helpers, all CRUD routes, and access control."""
 import uuid
+from contextlib import contextmanager
 from types import SimpleNamespace
 
 import pytest
@@ -20,7 +21,7 @@ from app.core.rbac import (
     require_superadmin,
     require_org_admin_or_superadmin,
 )
-from app.models import Organization, Role, Permission, User, UserOrganizationRole
+from app.models import Organization, Role, Permission, User
 
 
 # ---------------------------------------------------------------------------
@@ -84,7 +85,8 @@ def db_session():
 
 @pytest.fixture
 def client(db_session):
-    return TestClient(app)
+    with TestClient(app) as c:
+        yield c
 
 
 @pytest.fixture
@@ -102,6 +104,16 @@ def as_regular_user():
     yield user
     app.dependency_overrides.pop(get_current_user, None)
 
+
+@contextmanager
+def _as_org_admin_for(org_id: str):
+    """Context manager that sets the current user to an org_admin for the given org."""
+    user = _org_admin_user(org_id)
+    app.dependency_overrides[get_current_user] = lambda: user
+    try:
+        yield user
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
 
 # ---------------------------------------------------------------------------
 # RBAC core unit tests
@@ -271,6 +283,33 @@ class TestOrganizationRoutes:
 
         res = client.patch(f"/api/rbac/organizations/{org_id}", json={"name": "Hacked"})
         assert res.status_code == 403
+
+    def test_update_organization_as_org_admin_of_that_org(self, client, db_session):
+        db = db_session()
+        org = Organization(id=str(uuid.uuid4()), name="Org Admin Org")
+        db.add(org)
+        db.commit()
+        org_id = org.id
+        db.close()
+
+        with _as_org_admin_for(org_id):
+            res = client.patch(f"/api/rbac/organizations/{org_id}", json={"name": "Org Admin Updated"})
+            assert res.status_code == 200
+            assert res.json()["name"] == "Org Admin Updated"
+
+    def test_update_organization_as_org_admin_of_different_org_is_forbidden(self, client, db_session):
+        db = db_session()
+        org_a = Organization(id=str(uuid.uuid4()), name="Org A")
+        org_b = Organization(id=str(uuid.uuid4()), name="Org B")
+        db.add_all([org_a, org_b])
+        db.commit()
+        org_a_id, org_b_id = org_a.id, org_b.id
+        db.close()
+
+        # org_admin of org_a tries to update org_b — must be forbidden
+        with _as_org_admin_for(org_a_id):
+            res = client.patch(f"/api/rbac/organizations/{org_b_id}", json={"name": "Should Fail"})
+            assert res.status_code == 403
 
     def test_update_organization_not_found(self, client, db_session, as_superadmin):
         res = client.patch("/api/rbac/organizations/nonexistent-id", json={"name": "X"})
@@ -679,6 +718,55 @@ class TestAssignmentRoutes:
         assert res.status_code == 200
         data = res.json()
         assert any(a["user_id"] == user_id for a in data)
+
+    def test_create_org_scoped_assignment_as_org_admin(self, client, db_session):
+        """org_admin may create assignments scoped to their own org."""
+        db = db_session()
+        org = Organization(id=str(uuid.uuid4()), name="Assign Org")
+        user = User(
+            id=str(uuid.uuid4()),
+            username=f"u_{uuid.uuid4().hex[:6]}",
+            display_name="Target User",
+            hashed_password="placeholder",
+        )
+        role = Role(id=str(uuid.uuid4()), name=f"r_{uuid.uuid4().hex[:6]}")
+        db.add_all([org, user, role])
+        db.commit()
+        org_id, user_id, role_id = org.id, user.id, role.id
+        db.close()
+
+        with _as_org_admin_for(org_id):
+            res = client.post(
+                "/api/rbac/assignments",
+                json={"user_id": user_id, "role_id": role_id, "organization_id": org_id},
+            )
+            assert res.status_code == 201
+            assert res.json()["organization_id"] == org_id
+
+    def test_create_org_scoped_assignment_as_org_admin_of_different_org_is_forbidden(self, client, db_session):
+        """org_admin of org A cannot create assignments for org B."""
+        db = db_session()
+        org_a = Organization(id=str(uuid.uuid4()), name="Org A (admin)")
+        org_b = Organization(id=str(uuid.uuid4()), name="Org B (target)")
+        user = User(
+            id=str(uuid.uuid4()),
+            username=f"u_{uuid.uuid4().hex[:6]}",
+            display_name="Target User",
+            hashed_password="placeholder",
+        )
+        role = Role(id=str(uuid.uuid4()), name=f"r_{uuid.uuid4().hex[:6]}")
+        db.add_all([org_a, org_b, user, role])
+        db.commit()
+        org_a_id, org_b_id, user_id, role_id = org_a.id, org_b.id, user.id, role.id
+        db.close()
+
+        # admin of org_a tries to create an assignment for org_b — must be forbidden
+        with _as_org_admin_for(org_a_id):
+            res = client.post(
+                "/api/rbac/assignments",
+                json={"user_id": user_id, "role_id": role_id, "organization_id": org_b_id},
+            )
+            assert res.status_code == 403
 
 
 # ---------------------------------------------------------------------------
