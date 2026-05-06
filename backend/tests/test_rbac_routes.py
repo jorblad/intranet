@@ -232,6 +232,65 @@ def test_init_db_does_not_reseed_permissions_after_admin_deletes_role_and_permis
         init_db_module.engine = original_engine
 
 
+def test_init_db_does_not_reseed_permissions_after_admin_deletes_users_and_permissions():
+    """init_db() must not reseed permissions when the last user AND all permissions were deleted.
+
+    Scenario: init_db() ran once (fresh install → admin user + roles + permissions seeded),
+    then an admin deleted all users AND all permissions.  On the next startup roles still
+    exist, so previously_initialized must be True and no permissions must be reseeded.
+    """
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from sqlalchemy.pool import StaticPool
+
+    import app.db.init_db as init_db_module
+    from app.db.base import Base
+    from app.models import Permission, User
+
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    TestingSessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+    Base.metadata.create_all(bind=engine)
+
+    original_session_local = init_db_module.SessionLocal
+    original_engine = init_db_module.engine
+    init_db_module.SessionLocal = TestingSessionLocal
+    init_db_module.engine = engine
+
+    try:
+        # First run: fresh install seeds admin user, roles + permissions
+        init_db_module.init_db()
+
+        # Admin deletes all users AND all permissions (roles still remain)
+        db = TestingSessionLocal()
+        try:
+            db.query(Permission).delete()
+            db.query(User).delete()
+            db.commit()
+            assert db.query(Permission).count() == 0, "Setup: all permissions should be deleted"
+            assert db.query(User).count() == 0, "Setup: all users should be deleted"
+        finally:
+            db.close()
+
+        # Second run: restart — roles still exist → previously_initialized=True
+        # → permissions must NOT be reseeded even though users are gone
+        init_db_module.init_db()
+
+        db = TestingSessionLocal()
+        try:
+            perm_count = db.query(Permission).count()
+            assert perm_count == 0, (
+                f"init_db() must not reseed permissions when last user was deleted; "
+                f"found {perm_count} permission(s)"
+            )
+        finally:
+            db.close()
+    finally:
+        init_db_module.SessionLocal = original_session_local
+        init_db_module.engine = original_engine
 
 
 def test_create_permission_as_superadmin(perm_client, perm_test_db, superadmin_override):

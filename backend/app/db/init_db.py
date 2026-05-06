@@ -134,21 +134,18 @@ def init_db() -> None:
         db.commit()
 
         # Determine whether this database had already been initialised before this
-        # invocation started inserting default RBAC data. Do not rely on `Role`
-        # existence alone: an admin can delete every role and permission after a prior
-        # startup, and that must not make a later restart look like a fresh install.
-        #
-        # `had_existing_users` is captured before any admin creation in this function,
-        # so it remains a durable signal that the database was already in use. Keep the
-        # existing RBAC-table checks as additional signals for partially initialised DBs.
+        # invocation started inserting default RBAC data. We check four RBAC tables
+        # so that the signal remains True even after an admin deletes all users: as
+        # long as any role, permission, role-permission link, or user-org-role row
+        # exists the database is considered previously initialised.  We intentionally
+        # do NOT use `had_existing_users` here because users can be deleted (including
+        # the last admin), which would otherwise falsely signal a fresh install.
         previously_initialized = (
-            had_existing_users is True
-            or db.query(Role.id).first() is not None
+            db.query(Role.id).first() is not None
             or db.query(Permission.id).first() is not None
             or db.query(RolePermission.role_id).first() is not None
             or db.query(UserOrganizationRole.user_id).first() is not None
         )
-        roles_existed_before = previously_initialized
 
         # Ensure a global `superadmin` role exists and, on a fresh DB, assign it to
         # the newly created admin user. Avoid granting superadmin to an arbitrary
@@ -307,11 +304,12 @@ def init_db() -> None:
             db.rollback()
             logger.exception("Failed to ensure default roles during DB init; startup will continue.")
 
-        # Seed standard permissions only on a truly fresh install — one where no roles
-        # existed when this init_db() invocation started. If any role already existed,
-        # the database was previously initialised and we must not reseed permissions,
-        # even if an admin subsequently deleted them all.
-        if not roles_existed_before and db.query(Permission).count() == 0:
+        # Seed standard permissions only on a truly fresh install — indicated by
+        # `previously_initialized` being False (no role, permission, role-permission,
+        # or user-org-role rows existed before this invocation). Even then, only seed
+        # when the permissions table is still empty so an admin who manually deleted
+        # all permissions on an already-initialised DB does not have them resurrected.
+        if not previously_initialized and db.query(Permission).count() == 0:
             try:
                 with db.begin_nested():
                     for codename, description in DEFAULT_PERMISSIONS:
