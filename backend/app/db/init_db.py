@@ -311,7 +311,7 @@ def init_db() -> None:
         # or user-org-role rows existed before this invocation). Even then, only seed
         # when the permissions table is still empty so an admin who manually deleted
         # all permissions on an already-initialised DB does not have them resurrected.
-        if not previously_initialized and db.query(Permission).count() == 0:
+        if not previously_initialized and db.query(Permission.id).first() is None:
             try:
                 with db.begin_nested():
                     for codename, description in DEFAULT_PERMISSIONS:
