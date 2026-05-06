@@ -294,7 +294,7 @@ def test_init_db_does_not_reseed_permissions_after_admin_deletes_users_and_permi
         init_db_module.engine = original_engine
 
 
-def test_create_permission_as_superadmin(perm_client, perm_test_db, superadmin_override):
+def test_create_permission_as_superadmin(perm_client, superadmin_override):
     """Superadmin can create a new permission via POST /rbac/permissions."""
     res = perm_client.post(
         "/api/rbac/permissions",
@@ -307,7 +307,7 @@ def test_create_permission_as_superadmin(perm_client, perm_test_db, superadmin_o
     assert "id" in data
 
 
-def test_create_permission_requires_superadmin(perm_client, perm_test_db, regular_user_override):
+def test_create_permission_requires_superadmin(perm_client, regular_user_override):
     """Non-superadmin user must receive 403 when attempting to create a permission."""
     res = perm_client.post(
         "/api/rbac/permissions",
