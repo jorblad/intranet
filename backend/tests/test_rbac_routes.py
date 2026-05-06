@@ -36,6 +36,7 @@ def perm_test_db():
     app.dependency_overrides[get_db] = _get_db
     yield TestingSessionLocal
     app.dependency_overrides.pop(get_db, None)
+    app.dependency_overrides.pop(get_current_user, None)
 
 
 @pytest.fixture
