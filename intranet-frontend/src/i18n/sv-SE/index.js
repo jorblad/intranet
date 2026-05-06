@@ -27,13 +27,10 @@ export default {
   adminPermissions: {
     codename: 'Kodnamn',
     description: 'Beskrivning',
-    create: 'Skapa',
     search: 'Sök behörigheter',
     no_permissions: 'Inga behörigheter',
     load_failed: 'Misslyckades med att ladda behörigheter',
     codename_empty: 'Kodnamn får inte vara tomt',
-    created: 'Behörighet skapad',
-    create_failed: 'Misslyckades med att skapa behörighet',
     updated: 'Behörighet uppdaterad',
     update_failed: 'Misslyckades med att uppdatera behörighet',
     deleted: 'Behörighet borttagen',

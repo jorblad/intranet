@@ -1,11 +1,5 @@
 <template>
   <q-page padding>
-    <div class="row items-center q-gutter-md">
-      <q-input v-model="newCodename" :label="$t('adminPermissions.codename')" @keyup.enter="createPermission" />
-      <q-input v-model="newDescription" :label="$t('adminPermissions.description')" @keyup.enter="createPermission" />
-      <q-btn :label="$t('adminPermissions.create')" color="primary" @click="createPermission" />
-    </div>
-
     <div class="q-mt-md">
       <q-input dense v-model="search" :label="$t('adminPermissions.search')" clearable @input="onSearch" />
       <q-table
@@ -58,8 +52,6 @@ import { useI18n } from 'vue-i18n'
 const { t } = useI18n()
 
 const permissions = ref([])
-const newCodename = ref('')
-const newDescription = ref('')
 
 const search = ref('')
 const columns = [
@@ -85,22 +77,6 @@ async function load() {
     permissions.value = res.data
   } catch (err) {
     $q.notify({ type: 'negative', message: t('adminPermissions.load_failed') })
-  }
-}
-
-async function createPermission() {
-  if (!newCodename.value || !newCodename.value.trim()) {
-    $q.notify({ type: 'warning', message: t('adminPermissions.codename_empty') })
-    return
-  }
-  try {
-    await axios.post('/api/rbac/permissions', { codename: newCodename.value.trim(), description: newDescription.value?.trim() })
-    newCodename.value = ''
-    newDescription.value = ''
-    await load()
-    $q.notify({ type: 'positive', message: t('adminPermissions.created') })
-  } catch (err) {
-    $q.notify({ type: 'negative', message: err.response?.data?.detail || t('adminPermissions.create_failed') })
   }
 }
 

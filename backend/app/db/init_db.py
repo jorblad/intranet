@@ -25,6 +25,15 @@ from app.models import (
 
 logger = logging.getLogger(__name__)
 
+# Standard permissions seeded on every fresh install so the role editor works
+# out-of-the-box without requiring manual permission creation.
+DEFAULT_PERMISSIONS = [
+    ("activity.read", "Read access to activities"),
+    ("activity.write", "Write access to activities"),
+    ("schedule.read", "Read access to schedules"),
+    ("schedule.write", "Write access to schedules"),
+]
+
 
 def init_db() -> None:
     # Wait for the database to be available (useful in Docker dev where DB may start after backend)
@@ -123,6 +132,20 @@ def init_db() -> None:
 
         # Commit core seeding (e.g., admin user creation) before best-effort role seeding
         db.commit()
+
+        # Determine whether this database had already been initialised before this
+        # invocation started inserting default RBAC data. We check four RBAC tables
+        # so that the signal remains True even after an admin deletes all users: as
+        # long as any role, permission, role-permission link, or user-org-role row
+        # exists the database is considered previously initialised.  We intentionally
+        # do NOT use `had_existing_users` here because users can be deleted (including
+        # the last admin), which would otherwise falsely signal a fresh install.
+        previously_initialized = (
+            db.query(Role.id).first() is not None
+            or db.query(Permission.id).first() is not None
+            or db.query(RolePermission.role_id).first() is not None
+            or db.query(UserOrganizationRole.user_id).first() is not None
+        )
 
         # Ensure a global `superadmin` role exists and, on a fresh DB, assign it to
         # the newly created admin user. Avoid granting superadmin to an arbitrary
@@ -278,8 +301,31 @@ def init_db() -> None:
                         ", ".join(missing_roles),
                     )
         except Exception:
-            db.rollback()
+            # begin_nested() auto-rolls back its savepoint on exception; do not call
+            # db.rollback() here as that would abort the whole outer transaction and
+            # undo earlier best-effort seeding work.
             logger.exception("Failed to ensure default roles during DB init; startup will continue.")
+
+        # Seed standard permissions only on a truly fresh install — indicated by
+        # `previously_initialized` being False (no role, permission, role-permission,
+        # or user-org-role rows existed before this invocation). Even then, only seed
+        # when the permissions table is still empty so an admin who manually deleted
+        # all permissions on an already-initialised DB does not have them resurrected.
+        if not previously_initialized and db.query(Permission.id).first() is None:
+            try:
+                with db.begin_nested():
+                    for codename, description in DEFAULT_PERMISSIONS:
+                        db.add(Permission(codename=codename, description=description))
+                    db.flush()
+            except sa_exc.IntegrityError:
+                # A concurrent init beat us to it; savepoint is already rolled back.
+                logger.warning(
+                    "Default permissions already seeded by a concurrent init; skipping."
+                )
+            except Exception:
+                # begin_nested() auto-rolls back its savepoint on exception; do not call
+                # db.rollback() here as that would abort the whole outer transaction.
+                logger.exception("Failed to seed default permissions during DB init; startup will continue.")
 
         db.commit()
     finally:
