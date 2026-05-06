@@ -301,7 +301,9 @@ def init_db() -> None:
                         ", ".join(missing_roles),
                     )
         except Exception:
-            db.rollback()
+            # begin_nested() auto-rolls back its savepoint on exception; do not call
+            # db.rollback() here as that would abort the whole outer transaction and
+            # undo earlier best-effort seeding work.
             logger.exception("Failed to ensure default roles during DB init; startup will continue.")
 
         # Seed standard permissions only on a truly fresh install — indicated by
