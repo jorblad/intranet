@@ -10,6 +10,8 @@ from app.main import app
 from app.db.base import Base
 from app.db.session import get_db
 from app.api.routes.auth import get_current_user
+import app.db.init_db as init_db_module
+from app.models import Permission, Role, User
 
 
 # ---------------------------------------------------------------------------
@@ -65,6 +67,32 @@ def regular_user_override():
 
 
 # ---------------------------------------------------------------------------
+# Shared fixture for init_db unit tests
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def init_db_session():
+    """Fresh in-memory SQLite session factory with init_db_module patched to use it."""
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    TestingSessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+    Base.metadata.create_all(bind=engine)
+
+    original_session_local = init_db_module.SessionLocal
+    original_engine = init_db_module.engine
+    init_db_module.SessionLocal = TestingSessionLocal
+    init_db_module.engine = engine
+
+    yield TestingSessionLocal
+
+    init_db_module.SessionLocal = original_session_local
+    init_db_module.engine = original_engine
+
+
+# ---------------------------------------------------------------------------
 # Existing tests
 # ---------------------------------------------------------------------------
 
@@ -73,104 +101,54 @@ def test_apply_program_preset_route_exists():
     assert "/api/rbac/roles/{role_id}/apply-program-preset" in paths
 
 
-def test_init_db_seeds_default_permissions():
+def test_init_db_seeds_default_permissions(init_db_session):
     """init_db() must create the four standard Permission rows on a fresh database."""
-    from sqlalchemy import create_engine
-    from sqlalchemy.orm import sessionmaker
-    from sqlalchemy.pool import StaticPool
-
-    import app.db.init_db as init_db_module
-    from app.db.base import Base
-    from app.models import Permission
-
-    engine = create_engine(
-        "sqlite:///:memory:",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
-    TestingSessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
-    Base.metadata.create_all(bind=engine)
-
-    # Patch the module-level names used inside init_db()
-    original_session_local = init_db_module.SessionLocal
-    original_engine = init_db_module.engine
-    init_db_module.SessionLocal = TestingSessionLocal
-    init_db_module.engine = engine
-
+    init_db_module.init_db()
+    db = init_db_session()
     try:
-        init_db_module.init_db()
-        db = TestingSessionLocal()
-        try:
-            codenames = {p.codename for p in db.query(Permission).all()}
-            for expected_codename, _ in init_db_module.DEFAULT_PERMISSIONS:
-                assert expected_codename in codenames, (
-                    f"Expected permission '{expected_codename}' to be seeded by init_db()"
-                )
-        finally:
-            db.close()
+        codenames = {p.codename for p in db.query(Permission).all()}
+        for expected_codename, _ in init_db_module.DEFAULT_PERMISSIONS:
+            assert expected_codename in codenames, (
+                f"Expected permission '{expected_codename}' to be seeded by init_db()"
+            )
     finally:
-        init_db_module.SessionLocal = original_session_local
-        init_db_module.engine = original_engine
+        db.close()
 
 
-def test_init_db_does_not_reseed_permissions_after_admin_deletes_all():
+def test_init_db_does_not_reseed_permissions_after_admin_deletes_all(init_db_session):
     """init_db() must not resurrect permissions on a restart if an admin deleted them all.
 
     Scenario: init_db() ran once (fresh install → roles + permissions seeded),
     then an admin deleted every Permission row.  On the next startup init_db()
     must leave the permissions table empty.
     """
-    from sqlalchemy import create_engine
-    from sqlalchemy.orm import sessionmaker
-    from sqlalchemy.pool import StaticPool
+    # First run: fresh install seeds roles + permissions
+    init_db_module.init_db()
 
-    import app.db.init_db as init_db_module
-    from app.db.base import Base
-    from app.models import Permission
-
-    engine = create_engine(
-        "sqlite:///:memory:",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
-    TestingSessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
-    Base.metadata.create_all(bind=engine)
-
-    original_session_local = init_db_module.SessionLocal
-    original_engine = init_db_module.engine
-    init_db_module.SessionLocal = TestingSessionLocal
-    init_db_module.engine = engine
-
+    # Simulate admin deleting all permissions
+    db = init_db_session()
     try:
-        # First run: fresh install seeds roles + permissions
-        init_db_module.init_db()
-
-        # Simulate admin deleting all permissions
-        db = TestingSessionLocal()
-        try:
-            db.query(Permission).delete()
-            db.commit()
-            assert db.query(Permission).count() == 0, "Setup: all permissions should be deleted"
-        finally:
-            db.close()
-
-        # Second run: restart — permissions must NOT be reseeded
-        init_db_module.init_db()
-
-        db = TestingSessionLocal()
-        try:
-            count = db.query(Permission).count()
-            assert count == 0, (
-                f"init_db() must not reseed permissions on restart after admin deleted them; "
-                f"found {count} permission(s)"
-            )
-        finally:
-            db.close()
+        db.query(Permission).delete()
+        db.commit()
+        assert db.query(Permission).count() == 0, "Setup: all permissions should be deleted"
     finally:
-        init_db_module.SessionLocal = original_session_local
-        init_db_module.engine = original_engine
+        db.close()
 
-def test_init_db_does_not_reseed_permissions_after_admin_deletes_role_and_permissions():
+    # Second run: restart — permissions must NOT be reseeded
+    init_db_module.init_db()
+
+    db = init_db_session()
+    try:
+        count = db.query(Permission).count()
+        assert count == 0, (
+            f"init_db() must not reseed permissions on restart after admin deleted them; "
+            f"found {count} permission(s)"
+        )
+    finally:
+        db.close()
+
+
+def test_init_db_does_not_reseed_permissions_after_admin_deletes_role_and_permissions(init_db_session):
     """init_db() must not reseed permissions when a role was re-created on restart.
 
     Scenario: init_db() ran once (fresh install → roles + permissions seeded),
@@ -178,120 +156,70 @@ def test_init_db_does_not_reseed_permissions_after_admin_deletes_role_and_permis
     On the next startup init_db() will re-insert the missing 'member' role, but
     must still leave the permissions table empty.
     """
-    from sqlalchemy import create_engine
-    from sqlalchemy.orm import sessionmaker
-    from sqlalchemy.pool import StaticPool
+    # First run: fresh install seeds roles + permissions
+    init_db_module.init_db()
 
-    import app.db.init_db as init_db_module
-    from app.db.base import Base
-    from app.models import Permission, Role
-
-    engine = create_engine(
-        "sqlite:///:memory:",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
-    TestingSessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
-    Base.metadata.create_all(bind=engine)
-
-    original_session_local = init_db_module.SessionLocal
-    original_engine = init_db_module.engine
-    init_db_module.SessionLocal = TestingSessionLocal
-    init_db_module.engine = engine
-
+    # Admin deletes the 'member' role and all permissions
+    db = init_db_session()
     try:
-        # First run: fresh install seeds roles + permissions
-        init_db_module.init_db()
-
-        # Admin deletes the 'member' role and all permissions
-        db = TestingSessionLocal()
-        try:
-            db.query(Permission).delete()
-            db.query(Role).filter(Role.name == "member").delete()
-            db.commit()
-            assert db.query(Permission).count() == 0, "Setup: all permissions should be deleted"
-            assert db.query(Role).filter(Role.name == "member").first() is None, (
-                "Setup: 'member' role should be deleted"
-            )
-        finally:
-            db.close()
-
-        # Second run: restart re-creates 'member' role but must NOT reseed permissions
-        init_db_module.init_db()
-
-        db = TestingSessionLocal()
-        try:
-            perm_count = db.query(Permission).count()
-            assert perm_count == 0, (
-                f"init_db() must not reseed permissions when a missing role is re-created; "
-                f"found {perm_count} permission(s)"
-            )
-        finally:
-            db.close()
+        db.query(Permission).delete()
+        db.query(Role).filter(Role.name == "member").delete()
+        db.commit()
+        assert db.query(Permission).count() == 0, "Setup: all permissions should be deleted"
+        assert db.query(Role).filter(Role.name == "member").first() is None, (
+            "Setup: 'member' role should be deleted"
+        )
     finally:
-        init_db_module.SessionLocal = original_session_local
-        init_db_module.engine = original_engine
+        db.close()
+
+    # Second run: restart re-creates 'member' role but must NOT reseed permissions
+    init_db_module.init_db()
+
+    db = init_db_session()
+    try:
+        perm_count = db.query(Permission).count()
+        assert perm_count == 0, (
+            f"init_db() must not reseed permissions when a missing role is re-created; "
+            f"found {perm_count} permission(s)"
+        )
+    finally:
+        db.close()
 
 
-def test_init_db_does_not_reseed_permissions_after_admin_deletes_users_and_permissions():
+def test_init_db_does_not_reseed_permissions_after_admin_deletes_users_and_permissions(init_db_session):
     """init_db() must not reseed permissions when the last user AND all permissions were deleted.
 
     Scenario: init_db() ran once (fresh install → admin user + roles + permissions seeded),
     then an admin deleted all users AND all permissions.  On the next startup roles still
     exist, so previously_initialized must be True and no permissions must be reseeded.
     """
-    from sqlalchemy import create_engine
-    from sqlalchemy.orm import sessionmaker
-    from sqlalchemy.pool import StaticPool
+    # First run: fresh install seeds admin user, roles + permissions
+    init_db_module.init_db()
 
-    import app.db.init_db as init_db_module
-    from app.db.base import Base
-    from app.models import Permission, User
-
-    engine = create_engine(
-        "sqlite:///:memory:",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
-    TestingSessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
-    Base.metadata.create_all(bind=engine)
-
-    original_session_local = init_db_module.SessionLocal
-    original_engine = init_db_module.engine
-    init_db_module.SessionLocal = TestingSessionLocal
-    init_db_module.engine = engine
-
+    # Admin deletes all users AND all permissions (roles still remain)
+    db = init_db_session()
     try:
-        # First run: fresh install seeds admin user, roles + permissions
-        init_db_module.init_db()
-
-        # Admin deletes all users AND all permissions (roles still remain)
-        db = TestingSessionLocal()
-        try:
-            db.query(Permission).delete()
-            db.query(User).delete()
-            db.commit()
-            assert db.query(Permission).count() == 0, "Setup: all permissions should be deleted"
-            assert db.query(User).count() == 0, "Setup: all users should be deleted"
-        finally:
-            db.close()
-
-        # Second run: restart — roles still exist → previously_initialized=True
-        # → permissions must NOT be reseeded even though users are gone
-        init_db_module.init_db()
-
-        db = TestingSessionLocal()
-        try:
-            perm_count = db.query(Permission).count()
-            assert perm_count == 0, (
-                f"init_db() must not reseed permissions when last user was deleted; "
-                f"found {perm_count} permission(s)"
-            )
-        finally:
-            db.close()
+        db.query(Permission).delete()
+        db.query(User).delete()
+        db.commit()
+        assert db.query(Permission).count() == 0, "Setup: all permissions should be deleted"
+        assert db.query(User).count() == 0, "Setup: all users should be deleted"
     finally:
-        init_db_module.SessionLocal = original_session_local
-        init_db_module.engine = original_engine
+        db.close()
+
+    # Second run: restart — roles still exist → previously_initialized=True
+    # → permissions must NOT be reseeded even though users are gone
+    init_db_module.init_db()
+
+    db = init_db_session()
+    try:
+        perm_count = db.query(Permission).count()
+        assert perm_count == 0, (
+            f"init_db() must not reseed permissions when last user was deleted; "
+            f"found {perm_count} permission(s)"
+        )
+    finally:
+        db.close()
 
 
 def test_create_permission_as_superadmin(perm_client, superadmin_override):
