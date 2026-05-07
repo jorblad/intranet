@@ -85,8 +85,9 @@ def db_session():
 
 @pytest.fixture
 def client(db_session):
-    with TestClient(app) as c:
-        yield c
+    c = TestClient(app)
+    yield c
+    c.close()
 
 
 @pytest.fixture
