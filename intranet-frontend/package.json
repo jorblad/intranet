@@ -21,7 +21,7 @@
     "@orbit/data": "^0.17.0",
     "@orbit/indexeddb": "^0.17.2",
     "@orbit/memory": "^0.17.2",
-    "@quasar/extras": "^1.16.4",
+    "@quasar/extras": "^2.0.0",
     "axios": "^1.4.0",
     "dompurify": "^3.3.2",
     "marked": "^18.0.0",
