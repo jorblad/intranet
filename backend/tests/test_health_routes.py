@@ -59,12 +59,12 @@ def client(sqlite_engine):
 
 
 def test_health_route_registered():
-    paths = [r.path for r in app.router.routes]
+    paths = [r.path for r in app.router.routes if hasattr(r, "path")]
     assert "/health" in paths
 
 
 def test_metrics_route_registered():
-    paths = [r.path for r in app.router.routes]
+    paths = [r.path for r in app.router.routes if hasattr(r, "path")]
     assert "/metrics" in paths
 
 
