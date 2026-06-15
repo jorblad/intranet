@@ -96,8 +96,16 @@ def init_db_session():
 # Existing tests
 # ---------------------------------------------------------------------------
 
+def _iter_paths(routes):
+    for r in routes:
+        if hasattr(r, "path"):
+            yield r.path
+        if hasattr(r, "routes"):
+            yield from _iter_paths(r.routes)
+
+
 def test_apply_program_preset_route_exists():
-    paths = [r.path for r in app.router.routes if hasattr(r, "path")]
+    paths = list(_iter_paths(app.router.routes))
     assert "/api/rbac/roles/{role_id}/apply-program-preset" in paths
 
 

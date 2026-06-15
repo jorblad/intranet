@@ -58,13 +58,21 @@ def client(sqlite_engine):
 # ---------------------------------------------------------------------------
 
 
+def _iter_paths(routes):
+    for r in routes:
+        if hasattr(r, "path"):
+            yield r.path
+        if hasattr(r, "routes"):
+            yield from _iter_paths(r.routes)
+
+
 def test_health_route_registered():
-    paths = [r.path for r in app.router.routes if hasattr(r, "path")]
+    paths = list(_iter_paths(app.router.routes))
     assert "/health" in paths
 
 
 def test_metrics_route_registered():
-    paths = [r.path for r in app.router.routes if hasattr(r, "path")]
+    paths = list(_iter_paths(app.router.routes))
     assert "/metrics" in paths
 
 
