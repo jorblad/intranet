@@ -97,8 +97,8 @@ def init_db_session():
 # ---------------------------------------------------------------------------
 
 def test_apply_program_preset_route_exists():
-    paths = [r.path for r in app.router.routes]
-    assert "/api/rbac/roles/{role_id}/apply-program-preset" in paths
+    res = TestClient(app).post("/api/rbac/roles/test-role-id/apply-program-preset", json={})
+    assert res.status_code != 404
 
 
 def test_init_db_seeds_default_permissions(init_db_session):

@@ -59,13 +59,13 @@ def client(sqlite_engine):
 
 
 def test_health_route_registered():
-    paths = [r.path for r in app.router.routes]
-    assert "/health" in paths
+    res = TestClient(app).get("/health")
+    assert res.status_code != 404
 
 
 def test_metrics_route_registered():
-    paths = [r.path for r in app.router.routes]
-    assert "/metrics" in paths
+    res = TestClient(app).get("/metrics")
+    assert res.status_code != 404
 
 
 # ---------------------------------------------------------------------------
