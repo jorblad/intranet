@@ -96,17 +96,9 @@ def init_db_session():
 # Existing tests
 # ---------------------------------------------------------------------------
 
-def _iter_paths(routes):
-    for r in routes:
-        if hasattr(r, "path"):
-            yield r.path
-        if hasattr(r, "routes"):
-            yield from _iter_paths(r.routes)
-
-
 def test_apply_program_preset_route_exists():
-    paths = list(_iter_paths(app.router.routes))
-    assert "/api/rbac/roles/{role_id}/apply-program-preset" in paths
+    res = TestClient(app).post("/api/rbac/roles/test-role-id/apply-program-preset", json={})
+    assert res.status_code != 404
 
 
 def test_init_db_seeds_default_permissions(init_db_session):
