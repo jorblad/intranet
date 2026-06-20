@@ -23,7 +23,7 @@
     "@orbit/memory": "^0.17.2",
     "@quasar/extras": "^2.0.0",
     "axios": "^1.4.0",
-    "dompurify": "^3.3.2",
+    "dompurify": "^3.4.11",
     "marked": "^18.0.0",
     "quasar": "^2.6.0",
     "vue": "^3.0.0",
