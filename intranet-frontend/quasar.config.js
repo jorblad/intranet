@@ -9,7 +9,7 @@
 // https://v2.quasar.dev/quasar-cli-vite/quasar-config-js
 
 
-import { defineConfig } from 'quasar/wrappers'
+import { defineConfig } from '@quasar/app-vite'
 import path from 'path'
 import { fileURLToPath } from 'url'
 
@@ -65,6 +65,12 @@ export default defineConfig((ctx) => {
       target: {
         browser: [ 'es2019', 'edge88', 'firefox78', 'chrome87', 'safari13.1' ],
         node: 'node16'
+      },
+
+      alias: {
+        src: path.resolve(__dirname, './src'),
+        pages: path.resolve(__dirname, './src/pages'),
+        layouts: path.resolve(__dirname, './src/layouts')
       },
 
       vueRouterMode: 'hash', // available values: 'hash', 'history'
