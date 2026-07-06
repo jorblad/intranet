@@ -9,7 +9,7 @@
 // https://v2.quasar.dev/quasar-cli-vite/quasar-config-js
 
 
-import { defineConfig } from '#q-app/wrappers'
+import { defineConfig } from 'quasar/wrappers'
 import path from 'path'
 import { fileURLToPath } from 'url'
 
