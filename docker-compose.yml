@@ -25,7 +25,7 @@ services:
       - ./intranet-frontend/dist/spa:/frontend:ro
     environment:
       - STATIC_DIR=/frontend
-      - DATABASE_URL=postgresql+psycopg2://intranet:intranet_password@db:5432/intranet_db
+      - DATABASE_URL=postgresql+psycopg://intranet:intranet_password@db:5432/intranet_db
       # Admin credentials used by the DB init script. Override via environment
       # or a .env file.
       - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}

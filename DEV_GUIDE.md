@@ -40,7 +40,7 @@ cd intranet/backend
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-export DATABASE_URL=postgresql+psycopg2://intranet:intranet_password@localhost:5432/intranet_db
+export DATABASE_URL=postgresql+psycopg://intranet:intranet_password@localhost:5432/intranet_db
 export SECRET_KEY=dev-secret
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```

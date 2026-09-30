@@ -6,7 +6,7 @@ python-multipart
 python-jose[cryptography]
 passlib[bcrypt]
 pydantic
-psycopg2-binary
+psycopg[binary]
 valkey[libvalkey]
 requests
 prometheus-client
