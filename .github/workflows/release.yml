@@ -20,11 +20,14 @@ jobs:
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
+      # Uses a PAT (RELEASE_PLEASE_TOKEN) rather than the default GITHUB_TOKEN,
+      # because many orgs/repos restrict GITHUB_TOKEN from creating pull requests.
+      # The PAT needs `repo` and `pull-requests: write` scopes.
       - uses: googleapis/release-please-action@v5
         with:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
 
   publish:
     if: github.event_name == 'release'
