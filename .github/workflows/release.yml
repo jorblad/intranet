@@ -1,0 +1,84 @@
+name: Release
+
+# release-please maintains versioning, CHANGELOG, Git tags and GitHub releases
+# from Conventional Commit messages. The `publish` job builds and pushes the
+# Docker images when a release is published.
+on:
+  push:
+    branches: [main]
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+  packages: write
+  pull-requests: write
+  id-token: write
+
+jobs:
+  release-please:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: googleapis/release-please-action@v4
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  publish:
+    if: github.event_name == 'release'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push backend image to GHCR
+        uses: docker/build-push-action@v7
+        with:
+          context: ./backend
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/intranet-backend:${{ github.event.release.tag_name }}
+            ghcr.io/${{ github.repository_owner }}/intranet-backend:latest
+
+      - name: Build and push frontend image to GHCR
+        uses: docker/build-push-action@v7
+        with:
+          context: ./intranet-frontend
+          file: intranet-frontend/Dockerfile.prod
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/intranet-frontend:${{ github.event.release.tag_name }}
+            ghcr.io/${{ github.repository_owner }}/intranet-frontend:latest
+
+      - name: Optionally push to Docker Hub
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          if [ -z "$DOCKERHUB_USERNAME" ] || [ -z "$DOCKERHUB_TOKEN" ]; then
+            echo "Docker Hub credentials not provided; skipping Docker Hub push"
+            exit 0
+          fi
+          echo "$DOCKERHUB_TOKEN" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin
+          # Backend
+          docker tag ghcr.io/${{ github.repository_owner }}/intranet-backend:${{ github.event.release.tag_name }} ${DOCKERHUB_USERNAME}/intranet-backend:${{ github.event.release.tag_name }}
+          docker tag ghcr.io/${{ github.repository_owner }}/intranet-backend:latest ${DOCKERHUB_USERNAME}/intranet-backend:latest
+          docker push ${DOCKERHUB_USERNAME}/intranet-backend:${{ github.event.release.tag_name }}
+          docker push ${DOCKERHUB_USERNAME}/intranet-backend:latest
+          # Frontend
+          docker tag ghcr.io/${{ github.repository_owner }}/intranet-frontend:${{ github.event.release.tag_name }} ${DOCKERHUB_USERNAME}/intranet-frontend:${{ github.event.release.tag_name }}
+          docker tag ghcr.io/${{ github.repository_owner }}/intranet-frontend:latest ${DOCKERHUB_USERNAME}/intranet-frontend:latest
+          docker push ${DOCKERHUB_USERNAME}/intranet-frontend:${{ github.event.release.tag_name }}
+          docker push ${DOCKERHUB_USERNAME}/intranet-frontend:latest
