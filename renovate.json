@@ -8,30 +8,57 @@
   "semanticCommits": "enabled",
   "packageRules": [
     {
-      "matchUpdateTypes": ["patch", "minor"],
+      "description": "Patch/digest updates are released as a PATCH version (fix)",
+      "matchUpdateTypes": ["patch", "digest", "pin"],
+      "semanticCommitType": "fix"
+    },
+    {
+      "description": "Minor updates are released as a MINOR version (feat)",
+      "matchUpdateTypes": ["minor"],
+      "semanticCommitType": "feat"
+    },
+    {
+      "description": "Major updates are released as a MAJOR version (feat! with BREAKING CHANGE)",
+      "matchUpdateTypes": ["major"],
+      "semanticCommitType": "feat",
+      "commitMessagePrefix": "feat(deps)!:",
+      "commitBody": "BREAKING CHANGE: This is a major dependency update and requires manual review before it is released."
+    },
+    {
+      "description": "Group and auto-merge all non-major updates",
+      "matchUpdateTypes": ["patch", "minor", "digest"],
       "automerge": true,
       "automergeType": "branch",
-      "groupName": "all patch and minor updates"
+      "groupName": "all non-major updates",
+      "groupSlug": "non-major"
     },
     {
+      "description": "Major updates require manual review (no auto-merge)",
       "matchUpdateTypes": ["major"],
       "automerge": false,
-      "groupName": "major updates (manual review)"
+      "groupName": "major updates (manual review)",
+      "groupSlug": "major"
     },
     {
+      "description": "Docker image updates",
       "matchManagers": ["dockerfile", "docker-compose"],
       "matchDatasources": ["docker"],
       "groupName": "docker image updates",
+      "groupSlug": "docker",
       "automerge": true
     },
     {
+      "description": "Python dependencies",
       "matchManagers": ["pip_requirements", "pip_setup"],
       "groupName": "python dependencies",
+      "groupSlug": "python",
       "automerge": true
     },
     {
+      "description": "Frontend dependencies (manual review)",
       "matchManagers": ["npm"],
       "groupName": "frontend dependencies",
+      "groupSlug": "npm",
       "automerge": false
     }
   ]

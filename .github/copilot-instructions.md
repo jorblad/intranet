@@ -6,7 +6,7 @@ This repository contains an intranet scheduling system for church youth organiza
 - **Frontend**: Vue 3 + Quasar (SPA), bundled with Vite / `@quasar/app-vite`
 - **Database**: PostgreSQL in production; SQLite is used in CI tests
 - **Real-time sync**: WebSockets with an Orbit-like client adapter (IndexedDB + WebSocket)
-- **CI/CD**: GitHub Actions builds and publishes Docker images to GHCR; releases are triggered by PR labels (`major`, `minor`, `patch`)
+- **CI/CD**: GitHub Actions builds and publishes Docker images to GHCR; releases are automated by [release-please](https://github.com/googleapis/release-please) from Conventional Commit messages (no manual labels needed)
 
 ## Repository layout
 
@@ -82,7 +82,21 @@ npm run build
 
 - **Backend tests** run on every PR and push to `main` (Python 3.14, SQLite)
 - **Frontend build** runs after backend tests pass (Node 24, `npm ci && npm run build`)
-- Open PRs against `main` and add a semver label (`major`, `minor`, or `patch`) to trigger the release workflow
+
+## Releases & Semantic Versioning (release-please)
+
+Releases are automated with [release-please](https://github.com/googleapis/release-please), which is **driven entirely by Conventional Commit messages**. Follow these rules so releases and version bumps happen correctly:
+
+- Every PR merged to `main` must use a Conventional Commit message (or be squashed with one). The commit type determines the SemVer bump:
+  - `fix:` → PATCH release
+  - `feat:` → MINOR release
+  - `feat!:` or a `BREAKING CHANGE:` footer → MAJOR release
+  - `chore:`, `docs:`, `ci:`, `refactor:`, `test:`, `style:` → no release (use these for changes that should not trigger a release, e.g. CI/config changes)
+- Use a scope where helpful, e.g. `fix(deps):`, `feat(auth):`.
+- release-please automatically opens a `chore(main): release X.Y.Z` PR that summarizes the pending changes. **Merge that PR** to cut the release (it creates the Git tag + GitHub release). Never create releases or tags manually.
+- Merging the release PR triggers the `publish` job, which builds and pushes the `intranet-backend` and `intranet-frontend` Docker images to GHCR (and Docker Hub if credentials are configured), tagged with the release version and `latest`.
+- Do **not** edit the release PR title/body — it is generated.
+- Renovate is configured to emit Conventional Commit messages (`fix(deps)`, `feat(deps)`, `feat(deps)!` with a `BREAKING CHANGE` footer) so dependency updates drive the correct SemVer bump automatically. Major dependency updates are not auto-merged and require manual review.
 
 ## Docker / deployment
 
