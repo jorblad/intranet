@@ -2,6 +2,28 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.0](https://github.com/jorblad/intranet/compare/v1.0.0...v1.1.0) (2026-10-17)
+
+
+### Features
+
+* **deps:** update dependency eslint to v10.13.0 ([09cb1c4](https://github.com/jorblad/intranet/commit/09cb1c4e6eceed5a1b34b0f9f2ed1ba499e16c21))
+* **deps:** update dependency eslint to v10.13.0 ([7e3e5ef](https://github.com/jorblad/intranet/commit/7e3e5efd896cb0eea3f1a16ee4c1e76b1d2b95c8))
+
+
+### Bug Fixes
+
+* **deps:** update dependency @intlify/unplugin-vue-i18n to v11.2.6 ([c581b33](https://github.com/jorblad/intranet/commit/c581b33168dc4d43dc5944b3dfe2d95f0a8f0354))
+* **deps:** update dependency @intlify/unplugin-vue-i18n to v11.2.6 ([0e5c072](https://github.com/jorblad/intranet/commit/0e5c072ba68b7ce464fc315e1052c673860fbcba))
+* **deps:** update dependency @quasar/app-vite to v3.10.3 ([97db837](https://github.com/jorblad/intranet/commit/97db837a6a2f88ab577654c43fa75da50be6b124))
+* **deps:** update dependency @quasar/app-vite to v3.10.3 ([f337407](https://github.com/jorblad/intranet/commit/f3374077e6f8088308139ba2dff3c6b09ef5b566))
+* **deps:** update dependency jsdom to v30.1.3 ([8c84a64](https://github.com/jorblad/intranet/commit/8c84a6418f3f3b7a0f8137e15c51880d22f874b8))
+* **deps:** update dependency jsdom to v30.1.3 ([3534b4b](https://github.com/jorblad/intranet/commit/3534b4b96fcf442eccc04c3456b0a9f897d71025))
+* **deps:** update dependency vitest to v5.0.5 ([ac85e2c](https://github.com/jorblad/intranet/commit/ac85e2ce14ecca980114da5b5be804c8747e0400))
+* **deps:** update dependency vitest to v5.0.5 ([0798a11](https://github.com/jorblad/intranet/commit/0798a11f4b27cbedc7835d62ffa3286cde3e0589))
+* **deps:** update dependency vue-i18n to v11.4.15 ([8fc8920](https://github.com/jorblad/intranet/commit/8fc8920f8c5ec5dfe861298a6dbbf4adfd46056e))
+* **deps:** update dependency vue-i18n to v11.4.15 ([e3fbd5e](https://github.com/jorblad/intranet/commit/e3fbd5e083656551c75b50fbb2609d0a1a55d83b))
+
 ## 1.0.0 (2026-10-14)
 
 
