@@ -2,6 +2,73 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.0](https://github.com/jorblad/intranet/compare/v1.0.0...v2.0.0) (2026-11-13)
+
+
+### ⚠ BREAKING CHANGES
+
+* **deps:** This is a major dependency update and requires manual review before it is released.
+* **deps:** This is a major dependency update and requires manual review before it is released.
+* **deps:** This is a major dependency update and requires manual review before it is released.
+* **deps:** This is a major dependency update and requires manual review before it is released.
+
+### Features
+
+* **deps:** update actions/setup-python action to v7.1.0 ([5280e25](https://github.com/jorblad/intranet/commit/5280e25d309494127861bb996e044a2313ad8f6b))
+* **deps:** update actions/setup-python action to v7.1.0 ([d8c05e7](https://github.com/jorblad/intranet/commit/d8c05e7d0b337466a4ca50f6474c8b9d57a985a8))
+* **deps:** update dependency axios to v1.21.0 ([6e5bae5](https://github.com/jorblad/intranet/commit/6e5bae5c70737ac7b26adbf48408d585cc77693f))
+* **deps:** update dependency axios to v1.21.0 ([be237cc](https://github.com/jorblad/intranet/commit/be237cc08c85353b44a556ec3fc3d0ac79dbe9b6))
+* **deps:** update dependency eslint to v10.13.0 ([09cb1c4](https://github.com/jorblad/intranet/commit/09cb1c4e6eceed5a1b34b0f9f2ed1ba499e16c21))
+* **deps:** update dependency eslint to v10.13.0 ([7e3e5ef](https://github.com/jorblad/intranet/commit/7e3e5efd896cb0eea3f1a16ee4c1e76b1d2b95c8))
+* **deps:** update dependency eslint to v10.14.0 ([10e6b54](https://github.com/jorblad/intranet/commit/10e6b54fdf6f5c2741800dbb08563dd7abeb1fdf))
+* **deps:** update dependency eslint to v10.14.0 ([e745f4e](https://github.com/jorblad/intranet/commit/e745f4e981a5d001496922e2a09de7ec364f1de7))
+* **deps:** Update dependency jsdom to v31 ([#270](https://github.com/jorblad/intranet/issues/270)) ([0819df7](https://github.com/jorblad/intranet/commit/0819df75f2bc8b76281733819d58263b7d5cbdee))
+* **deps:** Update dependency node to v26 ([846d21b](https://github.com/jorblad/intranet/commit/846d21bc683b1c90e2d1181e4af1001befd377db))
+* **deps:** update dependency vue-router to v5.5.0 ([#272](https://github.com/jorblad/intranet/issues/272)) ([108f082](https://github.com/jorblad/intranet/commit/108f082c5346899057e089cc3354b6081a57d160))
+* **deps:** update frontend dependencies ([40cbb42](https://github.com/jorblad/intranet/commit/40cbb42e12b7b6b71fdc1e089d1c676354637fb1))
+* **deps:** update frontend dependencies ([f64901b](https://github.com/jorblad/intranet/commit/f64901bfe12782d71d62ae83418e920324094691))
+* **deps:** update frontend dependencies ([8ced4b5](https://github.com/jorblad/intranet/commit/8ced4b5c04916673b5e4acecc2fc1bcbdccaa5ec))
+* **deps:** update frontend dependencies ([392b988](https://github.com/jorblad/intranet/commit/392b988e7f2e49a8a8c5f439b355fe892291f3a2))
+* **deps:** update frontend dependencies ([#271](https://github.com/jorblad/intranet/issues/271)) ([d9ba9de](https://github.com/jorblad/intranet/commit/d9ba9defd58644192089e6bf19ccf4a85a1a4bb0))
+* **deps:** update frontend dependencies ([#274](https://github.com/jorblad/intranet/issues/274)) ([6ba0279](https://github.com/jorblad/intranet/commit/6ba0279fb0a6130f783c7baea0e17912b08ca5f5))
+* **deps:** Update Node.js to v26 ([0672d9f](https://github.com/jorblad/intranet/commit/0672d9f2d657d53ddf67771aed032264e0b0c4ca))
+* **deps:** Update Node.js to v26 ([59712cd](https://github.com/jorblad/intranet/commit/59712cdfddbc474f2b1e27c0b07d83306d7a7125))
+* **deps:** update python docker tag to v3.15 ([#253](https://github.com/jorblad/intranet/issues/253)) ([88e48d9](https://github.com/jorblad/intranet/commit/88e48d9e13e6f7455e7b8da96133b50e7354fb4d))
+
+
+### Bug Fixes
+
+* **deps:** update dependency @intlify/unplugin-vue-i18n to v11.2.6 ([c581b33](https://github.com/jorblad/intranet/commit/c581b33168dc4d43dc5944b3dfe2d95f0a8f0354))
+* **deps:** update dependency @intlify/unplugin-vue-i18n to v11.2.6 ([0e5c072](https://github.com/jorblad/intranet/commit/0e5c072ba68b7ce464fc315e1052c673860fbcba))
+* **deps:** update dependency @intlify/unplugin-vue-i18n to v11.2.8 ([6b0503f](https://github.com/jorblad/intranet/commit/6b0503f9880fee2aa4521d41d3729402b50b0700))
+* **deps:** update dependency @intlify/unplugin-vue-i18n to v11.2.8 ([26df384](https://github.com/jorblad/intranet/commit/26df38498c90f2d9b911e91d8c3acfd5e70775c2))
+* **deps:** update dependency @quasar/app-vite to v3.10.3 ([97db837](https://github.com/jorblad/intranet/commit/97db837a6a2f88ab577654c43fa75da50be6b124))
+* **deps:** update dependency @quasar/app-vite to v3.10.3 ([f337407](https://github.com/jorblad/intranet/commit/f3374077e6f8088308139ba2dff3c6b09ef5b566))
+* **deps:** update dependency jsdom to v30.1.3 ([8c84a64](https://github.com/jorblad/intranet/commit/8c84a6418f3f3b7a0f8137e15c51880d22f874b8))
+* **deps:** update dependency jsdom to v30.1.3 ([3534b4b](https://github.com/jorblad/intranet/commit/3534b4b96fcf442eccc04c3456b0a9f897d71025))
+* **deps:** update dependency jsdom to v31.0.1 ([#277](https://github.com/jorblad/intranet/issues/277)) ([1e6636b](https://github.com/jorblad/intranet/commit/1e6636bb62e78723444156ad65837dc7b9eaf2cf))
+* **deps:** update dependency postcss to v8.5.31 ([9e53528](https://github.com/jorblad/intranet/commit/9e53528e6b07235bea21144e6601a24e6f089dc8))
+* **deps:** update dependency postcss to v8.5.31 ([c6c4f77](https://github.com/jorblad/intranet/commit/c6c4f77707f2dc3ad3d7db2e3b7ae82269939d43))
+* **deps:** update dependency quasar to v2.35.2 ([92473a9](https://github.com/jorblad/intranet/commit/92473a9bb42212fe76674630211c45a7b9e6123f))
+* **deps:** update dependency quasar to v2.35.2 ([ebe8690](https://github.com/jorblad/intranet/commit/ebe8690f20d745a8630377d548b17f5519bbaecc))
+* **deps:** update dependency quasar to v2.35.4 ([#276](https://github.com/jorblad/intranet/issues/276)) ([4b638af](https://github.com/jorblad/intranet/commit/4b638af8ba3d3a2c9be42c66fba3596579230dbe))
+* **deps:** update dependency vite to v8.3.5 ([c7d55bd](https://github.com/jorblad/intranet/commit/c7d55bd76cbb8d68916ce89e6104b2e5ca300cf3))
+* **deps:** update dependency vite to v8.3.5 ([06a4c46](https://github.com/jorblad/intranet/commit/06a4c467da9fc170ec3144c5106a0f8e2ae5a74f))
+* **deps:** update dependency vite to v8.3.6 ([#268](https://github.com/jorblad/intranet/issues/268)) ([b67d90d](https://github.com/jorblad/intranet/commit/b67d90d413bd8bbb6a4f60aef65b4e46036d574a))
+* **deps:** update dependency vite to v8.3.8 ([#273](https://github.com/jorblad/intranet/issues/273)) ([aff0a1d](https://github.com/jorblad/intranet/commit/aff0a1dc6dc992f8eaf6e8e31d4f9a3b88404406))
+* **deps:** update dependency vitest to v5.0.5 ([ac85e2c](https://github.com/jorblad/intranet/commit/ac85e2ce14ecca980114da5b5be804c8747e0400))
+* **deps:** update dependency vitest to v5.0.5 ([0798a11](https://github.com/jorblad/intranet/commit/0798a11f4b27cbedc7835d62ffa3286cde3e0589))
+* **deps:** update dependency vue to v3.5.45 ([#269](https://github.com/jorblad/intranet/issues/269)) ([1a1b8a1](https://github.com/jorblad/intranet/commit/1a1b8a12c7b4d8f13fcc0ee1753d0c7ae53fc477))
+* **deps:** update dependency vue-i18n to v11.4.15 ([8fc8920](https://github.com/jorblad/intranet/commit/8fc8920f8c5ec5dfe861298a6dbbf4adfd46056e))
+* **deps:** update dependency vue-i18n to v11.4.15 ([e3fbd5e](https://github.com/jorblad/intranet/commit/e3fbd5e083656551c75b50fbb2609d0a1a55d83b))
+* **deps:** update dependency vue-i18n to v11.4.17 ([eba90b1](https://github.com/jorblad/intranet/commit/eba90b1b6a715f2bd36f8cf0535ae47cb64ca9e7))
+* **deps:** update dependency vue-i18n to v11.4.17 ([ddad4c4](https://github.com/jorblad/intranet/commit/ddad4c44131e772a939b79a76aa242a1e12d6780))
+* **deps:** update dependency vue-i18n to v11.4.18 ([96130c8](https://github.com/jorblad/intranet/commit/96130c814e134040f2929ec73155196fb1203966))
+* **deps:** update dependency vue-i18n to v11.4.18 ([0ffd295](https://github.com/jorblad/intranet/commit/0ffd29538b7af34ea04829389a123946ff654a20))
+* **deps:** update dependency vue-i18n to v11.4.19 ([#275](https://github.com/jorblad/intranet/issues/275)) ([382dfd4](https://github.com/jorblad/intranet/commit/382dfd4ae3df59c2b4d270a4a3d947b9163f6f11))
+* **deps:** update frontend dependencies to v11.2.7 ([9aeb060](https://github.com/jorblad/intranet/commit/9aeb06021e897981c9aee785b7e37788681a115c))
+* **deps:** update frontend dependencies to v11.2.7 ([ba8110f](https://github.com/jorblad/intranet/commit/ba8110f6f3b7ad10b279edb4e2f8a17983362e9a))
+
 ## 1.0.0 (2026-10-14)
 
 
