@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.1.0](https://github.com/jorblad/intranet/compare/v2.0.0...v2.1.0) (2026-11-14)
+
+
+### Features
+
+* **deps:** update frontend dependencies ([#280](https://github.com/jorblad/intranet/issues/280)) ([6f1263f](https://github.com/jorblad/intranet/commit/6f1263fe676e2e75aeb5c26729b09171530a8307))
+
+
+### Bug Fixes
+
+* **deps:** update dependency dompurify to v3.4.18 ([#281](https://github.com/jorblad/intranet/issues/281)) ([e2a837b](https://github.com/jorblad/intranet/commit/e2a837b99cb1849ad9be8631cbb534bd3eefceb0))
+* **deps:** update dependency vue-router to v5.5.1 ([#278](https://github.com/jorblad/intranet/issues/278)) ([1670b14](https://github.com/jorblad/intranet/commit/1670b1495a04d0b2e4060cfac1dd0394d246032a))
+
 ## [2.0.0](https://github.com/jorblad/intranet/compare/v1.0.0...v2.0.0) (2026-11-13)
 
 
