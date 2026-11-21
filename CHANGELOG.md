@@ -2,6 +2,32 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.0.0](https://github.com/jorblad/intranet/compare/v2.0.0...v3.0.0) (2026-11-21)
+
+
+### ⚠ BREAKING CHANGES
+
+* **deps:** This is a major dependency update and requires manual review before it is released.
+
+### Features
+
+* **deps:** update dependency @vue/test-utils to v2.6.0 ([#282](https://github.com/jorblad/intranet/issues/282)) ([a23fb8f](https://github.com/jorblad/intranet/commit/a23fb8f2be8122d276cf6a7c69a09813ca70a8cd))
+* **deps:** update frontend dependencies ([#280](https://github.com/jorblad/intranet/issues/280)) ([6f1263f](https://github.com/jorblad/intranet/commit/6f1263fe676e2e75aeb5c26729b09171530a8307))
+* **deps:** update frontend dependencies ([#288](https://github.com/jorblad/intranet/issues/288)) ([814a785](https://github.com/jorblad/intranet/commit/814a785948311eb156a2d6f418a4cafed999ee7f))
+* **deps:** Update postgres Docker tag to v19 ([#289](https://github.com/jorblad/intranet/issues/289)) ([65071b3](https://github.com/jorblad/intranet/commit/65071b36a3277e30b719aade86f45bf0dc208a23))
+
+
+### Bug Fixes
+
+* **deps:** update dependency dompurify to v3.4.18 ([#281](https://github.com/jorblad/intranet/issues/281)) ([e2a837b](https://github.com/jorblad/intranet/commit/e2a837b99cb1849ad9be8631cbb534bd3eefceb0))
+* **deps:** update dependency marked to v18.2.1 ([#283](https://github.com/jorblad/intranet/issues/283)) ([3c34d68](https://github.com/jorblad/intranet/commit/3c34d6834e15e82e85367c282d7d32fe0f091bd2))
+* **deps:** update dependency quasar to v2.35.5 ([#285](https://github.com/jorblad/intranet/issues/285)) ([d055185](https://github.com/jorblad/intranet/commit/d05518531ba1b113c97e462d0864851dbb4c8570))
+* **deps:** update dependency quasar to v2.35.6 ([#290](https://github.com/jorblad/intranet/issues/290)) ([eb1aa14](https://github.com/jorblad/intranet/commit/eb1aa142d13e751df565f77eb95a247a002963e7))
+* **deps:** update dependency vitest to v5.1.1 ([#287](https://github.com/jorblad/intranet/issues/287)) ([a53f30b](https://github.com/jorblad/intranet/commit/a53f30bb8023f7c1ef340ce9ec5d8950d38f4fff))
+* **deps:** update dependency vue-i18n to v11.4.21 ([#284](https://github.com/jorblad/intranet/issues/284)) ([33f5694](https://github.com/jorblad/intranet/commit/33f56946db208daf8e358f2b30dace879875db4b))
+* **deps:** update dependency vue-i18n to v11.4.22 ([#286](https://github.com/jorblad/intranet/issues/286)) ([07f1381](https://github.com/jorblad/intranet/commit/07f1381bcad203c489a7d9c4d0c24c5f7ae954ab))
+* **deps:** update dependency vue-router to v5.5.1 ([#278](https://github.com/jorblad/intranet/issues/278)) ([1670b14](https://github.com/jorblad/intranet/commit/1670b1495a04d0b2e4060cfac1dd0394d246032a))
+
 ## [2.0.0](https://github.com/jorblad/intranet/compare/v1.0.0...v2.0.0) (2026-11-13)
 
 
